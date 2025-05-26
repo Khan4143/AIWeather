@@ -84,14 +84,19 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoid}
       >
-        {/* Custom Header with Back Button and Title */}
+        {/* Custom Header with Back Button */}
         <View style={styles.headerContainer}>
           <TouchableOpacity 
             style={styles.backButton} 
+            activeOpacity={0.8}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="chevron-back" size={adjust(24)} color="#333" />
+            <Ionicons name="arrow-left" size={adjust(20)} color="#333" />
           </TouchableOpacity>
+        </View>
+        
+        {/* Title Section */}
+        <View style={styles.titleContainer}>
           <Text style={styles.headerText}>Let's get to know you better!</Text>
         </View>
 
@@ -281,6 +286,11 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
+  },
+  titleContainer: {
+    width: '100%',
+    marginTop: adjust(4),
+    marginBottom: adjust(8),
   },
   headerText: {
     fontSize: adjust(18),

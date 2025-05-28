@@ -14,9 +14,12 @@ import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
 import Icon from 'react-native-vector-icons/AntDesign';
+import { UserDataManager } from '../utils/userDataManager';
 
 const STANDARD_SPACING = adjust(12);
 
@@ -31,6 +34,69 @@ const commuteOptions = [
   { id: 'subway', label: 'Subway', icon: 'subway-outline' },
 ];
 
+// Activity options
+const activityOptions = [
+  { id: 'bbq', label: 'BBQ', icon: 'restaurant' },
+  { id: 'hiking', label: 'Hiking', icon: 'hiking', iconFamily: 'FontAwesome5' },
+  { id: 'outdoor', label: 'Outdoor Party', icon: 'outdoor-grill', iconFamily: 'MaterialIcons' },
+  { id: 'beach', label: 'Beach', icon: 'beach', iconFamily: 'MaterialCommunityIcons' },
+  { id: 'camping', label: 'Camping', icon: 'campground', iconFamily: 'FontAwesome5' },
+  { id: 'sports', label: 'Sports', icon: 'sports-soccer', iconFamily: 'MaterialIcons' },
+  { id: 'gardening', label: 'Gardening', icon: 'leaf' },
+  { id: 'cycling', label: 'Cycling', icon: 'bicycle' },
+];
+
+// Create a global object to store user routine data
+interface DailyRoutineType {
+  morningActivity: string | null;
+  commuteMethod: string | null;
+  commuteTime: {
+    hours: number;
+    minutes: number;
+    isAM: boolean;
+  };
+  eveningActivity: string | null;
+  selectedActivity: string | null;
+  selectedActivities: string[];
+  activities: string[];
+}
+
+export const DailyRoutineData = {
+  morningActivity: null as string | null,
+  commuteMethod: null as string | null,
+  commuteTime: {
+    hours: 8,
+    minutes: 0,
+    isAM: true,
+  },
+  eveningActivity: null as string | null,
+  selectedActivity: null as string | null,
+  selectedActivities: [] as string[],
+  activities: [] as string[],
+  getAll: function(): DailyRoutineType {
+    return {
+      morningActivity: this.morningActivity,
+      commuteMethod: this.commuteMethod,
+      commuteTime: this.commuteTime,
+      eveningActivity: this.eveningActivity,
+      selectedActivity: this.selectedActivity,
+      selectedActivities: this.selectedActivities,
+      activities: this.activities,
+    };
+  },
+  setAll: function(data: Partial<DailyRoutineType>): void {
+    this.morningActivity = data.morningActivity ?? this.morningActivity;
+    this.commuteMethod = data.commuteMethod ?? this.commuteMethod;
+    if (data.commuteTime) {
+      this.commuteTime = { ...this.commuteTime, ...data.commuteTime };
+    }
+    this.eveningActivity = data.eveningActivity ?? this.eveningActivity;
+    this.selectedActivity = data.selectedActivity ?? this.selectedActivity;
+    this.selectedActivities = data.selectedActivities ?? this.selectedActivities;
+    this.activities = data.activities ?? this.activities;
+  },
+};
+
 const DailyRoutine = ({ navigation }: { navigation: any }) => {
   // State for daily routine options
   const [morningActivity, setMorningActivity] = useState<string | null>('');
@@ -43,6 +109,8 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
   const [contentHeight, setContentHeight] = useState(0);
   const contentRef = useRef(null);
   const commuteSliderRef = useRef<FlatList>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [selectedActivities, setSelectedActivities] = useState<string[]>([]);
 
   useEffect(() => {
     // Hide header on mount
@@ -51,16 +119,127 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
         headerShown: false
       });
     }
+
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: true });
+      }
+    });
+
+    return unsubscribe;
   }, [navigation]);
 
   const handleBack = () => {
     navigation.goBack('UserInfo');
   };
 
-  const handleNext = () => {
-    // Navigate to next screen - Replace with actual next screen
+  // Update the collectAllActivities function to properly collect selected activities
+  const collectAllActivities = (): string[] => {
+    const allActivities: string[] = [];
+    
+    // Add morning activity if selected
+    if (morningActivity) {
+      allActivities.push(morningActivity);
+    }
+    
+    // Add evening activity if selected
+    if (eveningActivity) {
+      allActivities.push(eveningActivity);
+    }
+    
+    // Add selected outdoor activities with their labels
+    selectedActivities.forEach(id => {
+      // Find the activity option by ID to get the label
+      const activityOption = activityOptions.find(option => option.id === id);
+      if (activityOption) {
+        allActivities.push(activityOption.label);
+      }
+    });
+    
+    return [...new Set(allActivities)]; // Remove duplicates
+  };
+
+  // Update the handleNext function to properly save selected activities
+  const handleNext = async () => {
+    // Collect all activities
+    const allActivities = collectAllActivities();
+    
+    // Get activity labels for selected activities
+    const selectedActivityLabels = selectedActivities.map(id => {
+      const activity = activityOptions.find(a => a.id === id);
+      return activity ? activity.label : id;
+    });
+    
+    // Save data to DailyRoutineData global object
+    DailyRoutineData.setAll({
+      morningActivity,
+      commuteMethod,
+      commuteTime: {
+        hours: commuteHours,
+        minutes: commuteMinutes,
+        isAM
+      },
+      eveningActivity,
+      // Use first activity for backwards compatibility
+      selectedActivity: selectedActivityLabels.length > 0 ? selectedActivityLabels[0] : null,
+      // Save all selected activity labels
+      selectedActivities: selectedActivityLabels,
+      activities: allActivities,
+    });
+    
+    // Log what's being saved
+    console.log('Saving selected activities:', selectedActivityLabels);
+    console.log('Saving all activities:', allActivities);
+    
+    // Save to AsyncStorage
+    try {
+      await UserDataManager.saveDailyRoutine();
+      console.log('Daily routine data saved successfully');
+    } catch (error) {
+      console.error('Error saving daily routine data:', error);
+    }
+    
+    // Navigate to next screen
     navigation.navigate('PreferenceScreen');
   };
+
+  // Update the useEffect to properly load saved data
+  useEffect(() => {
+    // Load saved data when component mounts
+    const loadSavedData = async () => {
+      try {
+        await UserDataManager.loadAllData();
+        const savedData = UserDataManager.getDailyRoutine();
+        
+        // Set state from saved data
+        if (savedData.morningActivity) setMorningActivity(savedData.morningActivity);
+        if (savedData.commuteMethod) setCommuteMethod(savedData.commuteMethod);
+        if (savedData.commuteTime) {
+          setCommuteHours(savedData.commuteTime.hours);
+          setCommuteMinutes(savedData.commuteTime.minutes);
+          setIsAM(savedData.commuteTime.isAM);
+        }
+        if (savedData.eveningActivity) setEveningActivity(savedData.eveningActivity);
+        
+        // Convert activity labels back to IDs
+        if (savedData.selectedActivities && savedData.selectedActivities.length > 0) {
+          const activityIds = savedData.selectedActivities.map(label => {
+            // Find the ID for this label
+            const activity = activityOptions.find(a => a.label === label);
+            return activity ? activity.id : '';
+          }).filter(id => id !== ''); // Filter out any missing IDs
+          
+          setSelectedActivities(activityIds);
+        }
+        
+        console.log('Loaded daily routine data:', savedData);
+      } catch (error) {
+        console.error('Error loading daily routine data:', error);
+      }
+    };
+    
+    loadSavedData();
+  }, []);
 
   const handleContentLayout = (event: any) => {
     const { height } = event.nativeEvent.layout;
@@ -79,7 +258,13 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
   };
 
   const selectEveningActivity = (activity: string) => {
-    setEveningActivity(activity);
+    if (eveningActivity === activity) {
+      // If clicking the same activity again, deselect it
+      setEveningActivity(null);
+    } else {
+      // Otherwise, select the new activity
+      setEveningActivity(activity);
+    }
   };
 
   // Time adjustment handlers
@@ -101,6 +286,23 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
 
   const toggleAMPM = () => {
     setIsAM(prev => !prev);
+  };
+
+  const toggleActivity = (activityId: string) => {
+    setSelectedActivities(prev => {
+      // If already selected, remove it
+      if (prev.includes(activityId)) {
+        return prev.filter(id => id !== activityId);
+      } else {
+        // If not selected yet
+        // Allow up to 2 selections - if already have 2, remove the oldest one
+        if (prev.length >= 2) {
+          return [...prev.slice(1), activityId]; // Remove oldest, add new
+        } else {
+          return [...prev, activityId]; // Add new to existing array
+        }
+      }
+    });
   };
 
   // Render commute method item for FlatList
@@ -128,11 +330,49 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
     </TouchableOpacity>
   );
 
+  // Render activity item for FlatList
+  const renderActivityItem = ({ item }: { item: typeof activityOptions[0] }) => {
+    let IconComponent;
+    switch (item.iconFamily) {
+      case 'FontAwesome5':
+        IconComponent = FontAwesome5;
+        break;
+      case 'MaterialIcons':
+        IconComponent = MaterialIcons;
+        break;
+      case 'MaterialCommunityIcons':
+        IconComponent = MaterialCommunityIcons;
+        break;
+      default:
+        IconComponent = Ionicons;
+    }
+
+    const isSelected = selectedActivities.includes(item.id);
+
+    return (
+      <TouchableOpacity 
+        style={[styles.pillButton, isSelected && styles.selectedPillButton]} 
+        onPress={() => toggleActivity(item.id)}
+      >
+        <IconComponent 
+          name={item.icon} 
+          size={adjust(14)} 
+          color={isSelected ? "#fff" : "#333"} 
+          style={styles.pillIcon}
+        />
+        <Text 
+          style={[
+            styles.pillText, 
+            isSelected && styles.selectedPillText
+          ]}
+        >
+          {item.label}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
   const renderContent = () => (
-    <LinearGradient
-      colors={['#c9e3ff', '#7698ee']}
-      style={styles.background}
-    >
       <View style={styles.mainContent}>
         {/* Custom Header with Back Button and Title */}
         <View style={styles.headerContainer}>
@@ -143,15 +383,12 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
           >
             <Feather name="arrow-left" size={adjust(20)} color="#333" />
           </TouchableOpacity>
-          
-          
         </View>
 
         <View style={styles.titleContainer}>
           <Text style={styles.headerTitle}>Your daily routine matters </Text>
           <Text style={styles.headerTitle}>to Skylar!</Text>
         </View>
-
 
         <View style={styles.contentContainer}>
           {/* Morning Activity */}
@@ -197,7 +434,6 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
           {/* Commute Method - Horizontal Slider */}
           <View style={[styles.questionContainer, styles.sectionContainer, styles.commuteSection]}>
             <Text style={[styles.questionText, styles.commuteQuestionText]}>How do you usually get to work or school?</Text>
-          </View>
         </View>
       </View>
 
@@ -345,13 +581,16 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
           </TouchableOpacity>
         </View>
       </View>
-    </LinearGradient>
+    </View>
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
-      
+      <LinearGradient
+        colors={['#b3d4ff', '#5c85e6']}
+        style={styles.background}
+      >
       <View 
         ref={contentRef} 
         onLayout={handleContentLayout} 
@@ -361,12 +600,19 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
       </View>
       
       {needsScrollView ? (
-        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+          <ScrollView 
+            ref={scrollViewRef}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            contentContainerStyle={styles.scrollContainer}
+            overScrollMode="never"
+          >
           {renderContent()}
         </ScrollView>
       ) : (
         renderContent()
       )}
+      </LinearGradient>
     </SafeAreaView>
   );
 };
@@ -375,34 +621,30 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#c9e3ff',
+    backgroundColor: '#b3d4ff',
   },
   measureContainer: {
     width: '100%',
   },
   scrollContainer: {
-    flexGrow: 1,
+    paddingBottom: adjust(20),
   },
   background: {
     flex: 1,
-    alignItems: 'center',
-    // paddingTop: Platform.OS === 'ios' ? adjust(10) : (StatusBar.currentHeight || 0) + adjust(10),
-    paddingBottom: adjust(20),
-    minHeight: SCREEN_HEIGHT,
   },
   mainContent: {
     width: '100%',
   },
   contentContainer: {
     width: '100%',
-    paddingHorizontal: adjust(18),
+    paddingHorizontal: adjust(10),
   },
   headerContainer: {
     flexDirection: 'row',
     // alignItems: 'center',
     // justifyContent: 'center',
     paddingHorizontal: adjust(12),
-    paddingTop: Platform.OS === 'ios' ? adjust(50) : (StatusBar.currentHeight || 0) + adjust(20),
+    paddingTop: Platform.OS === 'ios' ? adjust(1) : (StatusBar.currentHeight || 0) + adjust(1),
     marginBottom: adjust(5),
   },
   backButton: {
@@ -412,7 +654,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: adjust(0),
+    marginTop: adjust(1),
+    marginLeft: adjust(10),
   },
   titleContainer: {
     width: '100%',
@@ -610,14 +853,14 @@ const styles = StyleSheet.create({
   },
   nextButton: {
     flexDirection: 'row',
-    backgroundColor: '#7698ee',
+    backgroundColor: '#517FE0',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: adjust(22),
     paddingVertical: adjust(10),
     paddingHorizontal: adjust(25),
     marginTop: adjust(16),
-    marginBottom: adjust(10),
+    marginBottom: adjust(20),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -629,6 +872,53 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: adjust(14),
     marginRight: adjust(4),
+  },
+  pillButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: adjust(20),
+    paddingVertical: adjust(8),
+    paddingHorizontal: adjust(14),
+    marginRight: adjust(8),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 1.5,
+    elevation: 2,
+  },
+  selectedPillButton: {
+    backgroundColor: '#7698ee',
+  },
+  pillIcon: {
+    marginRight: adjust(5),
+  },
+  pillText: {
+    fontSize: adjust(14),
+    fontWeight: '500',
+    color: '#333',
+  },
+  selectedPillText: {
+    color: '#fff',
+  },
+  helperTextContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: adjust(8),
+  },
+  helperText: {
+    fontSize: adjust(11),
+    fontStyle: 'italic',
+    color: '#666',
+  },
+  selectionCountText: {
+    fontSize: adjust(11),
+    fontWeight: '500',
+    color: '#517FE0',
+  },
+  selectionLimitReached: {
+    color: '#FF9500',
   },
 });
 

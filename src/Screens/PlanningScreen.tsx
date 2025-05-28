@@ -1,0 +1,1205 @@
+import React, { useState, useEffect } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  FlatList,
+  StatusBar,
+  Modal,
+  TouchableWithoutFeedback,
+  Alert,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
+import adjust from '../utils/adjust';
+import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
+
+// Planned event type
+interface PlannedEvent {
+  id: string;
+  activity: string;
+  description: string;
+  date: string;
+  time: string;
+  duration: string;
+}
+
+const PlanningScreen = ({ navigation }: { navigation: any }) => {
+  // State for selected activity, date, time, and duration
+  const [selectedActivity, setSelectedActivity] = useState('');
+  const [selectedDuration, setSelectedDuration] = useState('1 hour');
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showCustomTime, setShowCustomTime] = useState(false);
+  const [customHours, setCustomHours] = useState('1');
+  const [customMinutes, setCustomMinutes] = useState('0');
+  const [eventDescription, setEventDescription] = useState('');
+  const [plannedEvents, setPlannedEvents] = useState<PlannedEvent[]>([]);
+  const [previousDuration, setPreviousDuration] = useState('1 hour');
+  
+  // For tracking format updates
+  const [formattingComplete, setFormattingComplete] = useState(false);
+  
+  // Activity options
+  const activities = [
+    { id: '1', name: 'Jogging', icon: 'run', iconType: 'MaterialCommunityIcons' },
+    { id: '2', name: 'Picnic', icon: 'picnic', iconType: 'MaterialIcons' },
+    { id: '3', name: 'Hiking', icon: 'hiking', iconType: 'FontAwesome5' },
+    { id: '4', name: 'BBQ', icon: 'grill', iconType: 'MaterialCommunityIcons' },
+    { id: '5', name: 'Beach', icon: 'beach', iconType: 'MaterialCommunityIcons' },
+    { id: '6', name: 'Outdoor Party', icon: 'celebration', iconType: 'MaterialIcons' },
+    { id: '7', name: 'Camping', icon: 'campground', iconType: 'FontAwesome5' },
+    { id: '8', name: 'Sports', icon: 'sports', iconType: 'MaterialIcons' },
+  ];
+  
+  // Weather forecast data
+  const forecastData = [
+    { id: '1', time: '2 PM', temp: '24°', icon: 'sunny-outline' },
+    { id: '2', time: '3 PM', temp: '23°', icon: 'cloudy-outline' },
+    { id: '3', time: '4 PM', temp: '22°', icon: 'cloud' },
+    { id: '4', time: '5 PM', temp: '21°', icon: 'rainy-outline' },
+  ];
+
+  // State for date and time
+  const [selectedDate, setSelectedDate] = useState('Today, Feb 15');
+  const [selectedTime, setSelectedTime] = useState('4:00 PM');
+
+  // Add state for selected date and time in the modal
+  const [selectedDateIndex, setSelectedDateIndex] = useState(0);
+  const [selectedHour, setSelectedHour] = useState(4);
+  const [selectedMinute, setSelectedMinute] = useState(0);
+  const [isAM, setIsAM] = useState(false);
+
+  // Function to render activity icon based on type
+  const renderActivityIcon = (item: any) => {
+    switch (item.iconType) {
+      case 'MaterialCommunityIcons':
+        return <MaterialCommunityIcons name={item.icon} size={adjust(18)} color="#333" />;
+      case 'MaterialIcons':
+        return <MaterialIcons name={item.icon} size={adjust(18)} color="#333" />;
+      case 'FontAwesome5':
+        return <FontAwesome5 name={item.icon} size={adjust(16)} color="#333" />;
+      default:
+        return <Ionicons name="help-outline" size={adjust(18)} color="#333" />;
+    }
+  };
+
+  // Handle confirming an event
+  const handleConfirmEvent = () => {
+    // Check if an activity is selected
+    if (!selectedActivity) {
+      Alert.alert('Missing Information', 'Please select an activity first');
+      return;
+    }
+
+    // Check if description is provided
+    if (!eventDescription.trim()) {
+      Alert.alert('Missing Information', 'Please enter a description for your event');
+      return;
+    }
+
+    const selectedActivityObj = activities.find(activity => activity.id === selectedActivity);
+      
+    // Check if there's already an event at the same time
+    const eventExists = plannedEvents.some(
+      event => event.date === selectedDate && event.time === selectedTime
+    );
+    
+    if (eventExists) {
+      Alert.alert('Time Conflict', 'You already have an event planned at this time');
+      return;
+    }
+    
+    // Create and add the new event
+    const newEvent: PlannedEvent = {
+      id: Date.now().toString(),
+      activity: selectedActivityObj?.name || 'Event',
+      description: eventDescription,
+      date: selectedDate,
+      time: selectedTime,
+      duration: selectedDuration
+    };
+    
+    setPlannedEvents([...plannedEvents, newEvent]);
+    
+    // Reset form
+    setEventDescription('');
+    setSelectedActivity('');
+
+    // Show confirmation
+    Alert.alert('Success', 'Your event has been planned!');
+  };
+
+  // Modify the handleCheckWeather to just check weather
+  const handleCheckWeather = () => {
+    console.log('Checking weather for selected time and date');
+    // Here you would add code to get weather data for the selected time
+  };
+
+  // Handle view details
+  const handleViewDetails = () => {
+    console.log('View weather details');
+  };
+  
+  // Handle date & time selection
+  const handleDateSelection = () => {
+    setShowCalendar(true);
+  };
+  
+  // Handle custom duration selection
+  const handleCustomDuration = () => {
+    // Store previous duration before changing
+    setPreviousDuration(selectedDuration);
+    setSelectedDuration('Custom');
+    setShowCustomTime(true);
+  };
+  
+  // Handle closing custom time modal
+  const handleCloseCustomTime = () => {
+    // If no custom time was saved, revert to previous duration
+    if (selectedDuration === 'Custom') {
+      setSelectedDuration(previousDuration);
+    }
+    setShowCustomTime(false);
+  };
+  
+  // Handle saving custom duration
+  const handleSaveCustomDuration = () => {
+    const hours = parseInt(customHours);
+    const minutes = parseInt(customMinutes);
+    
+    let durationText = '';
+    
+    if (hours > 0) {
+      durationText += `${hours} ${hours === 1 ? 'hr' : 'hrs'}`;
+    }
+    
+    if (minutes > 0) {
+      if (durationText) durationText += ' ';
+      durationText += `${minutes} ${minutes === 1 ? 'min' : 'mins'}`;
+    }
+    
+    if (durationText) {
+      setSelectedDuration(durationText);
+    } else {
+      // If no duration entered, revert to previous
+      setSelectedDuration(previousDuration);
+    }
+    
+    setShowCustomTime(false);
+  };
+
+  // Delete a planned event
+  const handleDeleteEvent = (id: string) => {
+    setPlannedEvents(plannedEvents.filter(event => event.id !== id));
+  };
+
+  // Calendar dates
+  const calendarDates = [
+    { day: 'Today', date: '15', month: 'Feb' },
+    { day: 'Tomorrow', date: '16', month: 'Feb' },
+    { day: 'Friday', date: '17', month: 'Feb' },
+    { day: 'Saturday', date: '18', month: 'Feb' },
+    { day: 'Sunday', date: '19', month: 'Feb' },
+  ];
+  
+  // Time slots
+  const timeSlots = [
+    { time: '9:00 AM', selected: false },
+    { time: '10:00 AM', selected: false },
+    { time: '11:00 AM', selected: false },
+    { time: '12:00 PM', selected: false },
+    { time: '1:00 PM', selected: false },
+    { time: '2:00 PM', selected: false },
+    { time: '3:00 PM', selected: false },
+    { time: '4:00 PM', selected: true },
+    { time: '5:00 PM', selected: false },
+    { time: '6:00 PM', selected: false },
+    { time: '7:00 PM', selected: false },
+    { time: '8:00 PM', selected: false },
+  ];
+
+  // Handle date selection
+  const handleDateSelect = (index: number) => {
+    setSelectedDateIndex(index);
+    const selectedDate = calendarDates[index];
+    setSelectedDate(`${selectedDate.day}, ${selectedDate.month} ${selectedDate.date}`);
+  };
+  
+  // Handle time confirmation
+  const handleTimeConfirm = () => {
+    // Format the time with AM/PM
+    const hour = selectedHour === 12 ? 12 : selectedHour % 12;
+    const ampm = isAM ? 'AM' : 'PM';
+    const minute = selectedMinute < 10 ? `0${selectedMinute}` : selectedMinute;
+    setSelectedTime(`${hour}:${minute} ${ampm}`);
+    setShowCalendar(false);
+  };
+  
+  // Handle hour adjustment
+  const adjustHour = (increment: boolean) => {
+    if (increment) {
+      setSelectedHour(prevHour => (prevHour === 12 ? 1 : prevHour + 1));
+    } else {
+      setSelectedHour(prevHour => (prevHour === 1 ? 12 : prevHour - 1));
+    }
+  };
+  
+  // Handle minute adjustment
+  const adjustMinute = (increment: boolean) => {
+    if (increment) {
+      setSelectedMinute(prevMinute => (prevMinute === 55 ? 0 : prevMinute + 5));
+    } else {
+      setSelectedMinute(prevMinute => (prevMinute === 0 ? 55 : prevMinute - 5));
+    }
+  };
+
+  // Convert existing durations to use shorter format
+  useEffect(() => {
+    if (formattingComplete || plannedEvents.length === 0) return;
+    
+    const updatedEvents = plannedEvents.map(event => {
+      const duration = event.duration;
+      let updatedDuration = duration;
+      
+      if (duration.includes('hour')) {
+        updatedDuration = duration.replace('hour', 'hr').replace('hours', 'hrs');
+      }
+      if (duration.includes('minute')) {
+        updatedDuration = updatedDuration.replace('minute', 'min').replace('minutes', 'mins');
+      }
+      
+      return { ...event, duration: updatedDuration };
+    });
+    
+    if (JSON.stringify(updatedEvents) !== JSON.stringify(plannedEvents)) {
+      setPlannedEvents(updatedEvents);
+      setFormattingComplete(true);
+    }
+  }, [plannedEvents, formattingComplete]);
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      <LinearGradient
+        colors={['#b3d4ff', '#5c85e6']}
+        style={styles.background}
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          contentContainerStyle={styles.scrollContainer}
+          overScrollMode="never"
+          scrollEventThrottle={16}
+        >
+          {/* Header section */}
+          <View style={styles.header}>
+            <Text style={styles.title}>Plan Your Event</Text>
+            <Text style={styles.subtitle}>Let Skylar check the weather for you</Text>
+          </View>
+
+          {/* Activity selection */}
+          <View style={styles.activityListContainer}>
+            <FlatList
+              data={activities}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.activityList}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.activityItem,
+                    selectedActivity === item.id && styles.selectedActivityItem,
+                  ]}
+                  onPress={() => {
+                    setSelectedActivity(item.id);
+                    // Auto-populate the event description with the selected activity name
+                    setEventDescription(item.name);
+                  }}
+                >
+                  <View style={styles.activityIconContainer}>
+                    {renderActivityIcon(item)}
+                  </View>
+                  <Text style={styles.activityName}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+              nestedScrollEnabled={true}
+              snapToAlignment="start"
+              snapToInterval={adjust(10)}
+              disableIntervalMomentum={true}
+              decelerationRate="normal"
+            />
+          </View>
+
+          {/* Main planning card */}
+          <View style={styles.planningCard}>
+            {/* Event input */}
+            <Text style={styles.inputLabel}>What are you planning?</Text>
+            <TextInput
+              style={styles.eventInput}
+              placeholder="Type your event here..."
+              placeholderTextColor="#aaa"
+              value={eventDescription}
+              onChangeText={setEventDescription}
+            />
+
+            {/* Date & Time selection */}
+            <TouchableOpacity style={styles.dateTimeButton} onPress={handleDateSelection}>
+              <Ionicons name="calendar-outline" size={adjust(20)} color="#4361EE" />
+              <Text style={styles.dateTimeButtonText}>Select Date & Time</Text>
+            </TouchableOpacity>
+
+            {/* Date and Time display */}
+            <View style={styles.dateTimeContainer}>
+              <View style={styles.dateContainer}>
+                <Text style={styles.dateTimeLabel}>Date</Text>
+                <Text style={styles.dateTimeValue}>{selectedDate}</Text>
+              </View>
+              <View style={styles.timeContainer}>
+                <Text style={styles.dateTimeLabel}>Time</Text>
+                <Text style={styles.dateTimeValue}>{selectedTime}</Text>
+              </View>
+            </View>
+
+            {/* Duration selection */}
+            <Text style={styles.durationLabel}>Duration</Text>
+            <View style={styles.durationOptions}>
+              <TouchableOpacity
+                style={[
+                  styles.durationButton,
+                  selectedDuration === '1 hour' && styles.selectedDurationButton,
+                ]}
+                onPress={() => setSelectedDuration('1 hour')}
+              >
+                <Text
+                  style={[
+                    styles.durationButtonText,
+                    selectedDuration === '1 hour' && styles.selectedDurationText,
+                  ]}
+                >
+                  1 hour
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.durationButton,
+                  selectedDuration === '2 hours' && styles.selectedDurationButton,
+                ]}
+                onPress={() => setSelectedDuration('2 hours')}
+              >
+                <Text
+                  style={[
+                    styles.durationButtonText,
+                    selectedDuration === '2 hours' && styles.selectedDurationText,
+                  ]}
+                >
+                  2 hours
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.durationButton,
+                  selectedDuration !== '1 hour' && selectedDuration !== '2 hours' && styles.selectedDurationButton,
+                ]}
+                onPress={handleCustomDuration}
+              >
+                <Text
+                  style={[
+                    styles.durationButtonText,
+                    selectedDuration !== '1 hour' && selectedDuration !== '2 hours' && styles.selectedDurationText,
+                  ]}
+                >
+                  Custom
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Weather forecast */}
+            <View style={styles.forecastSection}>
+              <View style={styles.forecastHeader}>
+                <View style={styles.forecastTitleContainer}>
+                  <Ionicons name="sunny" size={adjust(18)} color="#FFD700" />
+                  <Text style={styles.forecastTitle}>Weather Forecast</Text>
+                </View>
+                <TouchableOpacity onPress={handleViewDetails}>
+                  <Text style={styles.viewDetailsText}>View Details</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Hourly forecast */}
+              <View style={styles.hourlyForecast}>
+                {forecastData.map((item) => (
+                  <View key={item.id} style={styles.forecastItem}>
+                    <Text style={styles.forecastTime}>{item.time}</Text>
+                    <Ionicons name={item.icon} size={adjust(20)} color={item.time === '2 PM' ? '#FFD700' : '#6e7689'} />
+                    <Text style={styles.forecastTemp}>{item.temp}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            {/* Confirm button inside the card */}
+            <TouchableOpacity 
+              style={styles.confirmEventButton} 
+              onPress={handleConfirmEvent}
+            >
+              <Text style={styles.confirmEventButtonText}>Confirm Event</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Assistant suggestion */}
+          <View style={styles.assistantCard}>
+            <View style={styles.assistantIconContainer}>
+              <Ionicons name="person" size={adjust(24)} color="#fff" />
+            </View>
+            <Text style={styles.assistantText}>
+              I'll find the perfect weather conditions for your event!
+            </Text>
+          </View>
+
+          {/* Check weather button - now just checks weather instead of adding events */}
+          <TouchableOpacity style={styles.checkButton} onPress={handleCheckWeather}>
+            <Text style={styles.checkButtonText}>Check Weather</Text>
+          </TouchableOpacity>
+          
+          {/* Planned events section */}
+          {plannedEvents.length > 0 && (
+            <View style={styles.plannedEventsSection}>
+              <Text style={styles.sectionTitleText}>Your Planned Events</Text>
+              
+              {plannedEvents.map((event) => (
+                <View key={event.id} style={styles.plannedEventCard}>
+                  <View style={styles.plannedEventHeader}>
+                    <Text style={styles.plannedEventActivity}>{event.activity}</Text>
+                    <TouchableOpacity onPress={() => handleDeleteEvent(event.id)}>
+                      <Ionicons name="trash-outline" size={adjust(18)} color="#FF6B6B" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <Text style={styles.plannedEventDesc}>{event.description}</Text>
+                  
+                  <View style={styles.plannedEventDetails}>
+                    <View style={styles.plannedEventDetail}>
+                      <Ionicons name="calendar-outline" size={adjust(14)} color="#4361EE" />
+                      <Text style={styles.plannedEventDetailText} numberOfLines={1}>{event.date}</Text>
+                    </View>
+                    
+                    <View style={styles.plannedEventDetailsRow}>
+                      <View style={styles.plannedEventDetail}>
+                        <Ionicons name="time-outline" size={adjust(14)} color="#4361EE" />
+                        <Text style={styles.plannedEventDetailText} numberOfLines={1}>{event.time}</Text>
+                      </View>
+                      
+                      <View style={styles.plannedEventDetail}>
+                        <Ionicons name="timer-outline" size={adjust(14)} color="#4361EE" />
+                        <Text style={styles.plannedEventDetailText}>{event.duration}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Date and Time Selection Modal */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={showCalendar}
+          onRequestClose={() => setShowCalendar(false)}
+        >
+          <TouchableWithoutFeedback onPress={() => setShowCalendar(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback onPress={e => e.stopPropagation()}>
+                <View style={styles.calendarModal}>
+                  <View style={styles.calendarHeader}>
+                    <Text style={styles.calendarTitle}>Select Date & Time</Text>
+                    <TouchableOpacity onPress={() => setShowCalendar(false)} style={styles.closeButton}>
+                      <Ionicons name="close" size={adjust(20)} color="#333" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  {/* Calendar Section */}
+                  <View style={styles.calendarSection}>
+                    <Text style={styles.sectionTitle}>Date</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      {calendarDates.map((date, index) => (
+                        <TouchableOpacity
+                          key={index}
+                          style={[
+                            styles.dateItem,
+                            selectedDateIndex === index && styles.selectedDateItem,
+                          ]}
+                          onPress={() => handleDateSelect(index)}
+                        >
+                          <Text
+                            style={[
+                              styles.dateItemDay,
+                              selectedDateIndex === index && { color: '#fff' },
+                            ]}
+                          >
+                            {date.day}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.dateItemNumber,
+                              selectedDateIndex === index && { color: '#fff' },
+                            ]}
+                          >
+                            {date.date}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.dateItemMonth,
+                              selectedDateIndex === index && { color: '#fff' },
+                            ]}
+                          >
+                            {date.month}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                  
+                  {/* Time Section */}
+                  <View style={styles.timeSection}>
+                    <Text style={styles.sectionTitle}>Time</Text>
+                    <View style={styles.timeSelector}>
+                      {/* Hour selector */}
+                      <View style={styles.timeSelectorUnit}>
+                        <TouchableOpacity onPress={() => adjustHour(true)} style={styles.timeAdjustButton}>
+                          <Ionicons name="chevron-up" size={adjust(20)} color="#4361EE" />
+                        </TouchableOpacity>
+                        <Text style={styles.timeValue}>
+                          {selectedHour === 0 ? 12 : selectedHour > 12 ? selectedHour - 12 : selectedHour}
+                        </Text>
+                        <TouchableOpacity onPress={() => adjustHour(false)} style={styles.timeAdjustButton}>
+                          <Ionicons name="chevron-down" size={adjust(20)} color="#4361EE" />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      <Text style={styles.timeColon}>:</Text>
+                      
+                      {/* Minute selector */}
+                      <View style={styles.timeSelectorUnit}>
+                        <TouchableOpacity onPress={() => adjustMinute(true)} style={styles.timeAdjustButton}>
+                          <Ionicons name="chevron-up" size={adjust(20)} color="#4361EE" />
+                        </TouchableOpacity>
+                        <Text style={styles.timeValue}>
+                          {selectedMinute < 10 ? `0${selectedMinute}` : selectedMinute}
+                        </Text>
+                        <TouchableOpacity onPress={() => adjustMinute(false)} style={styles.timeAdjustButton}>
+                          <Ionicons name="chevron-down" size={adjust(20)} color="#4361EE" />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      {/* AM/PM selector */}
+                      <View style={styles.ampmSelector}>
+                        <TouchableOpacity
+                          style={[
+                            styles.ampmButton,
+                            isAM && styles.selectedAmpmButton,
+                          ]}
+                          onPress={() => setIsAM(true)}
+                        >
+                          <Text
+                            style={[
+                              styles.ampmButtonText,
+                              isAM && styles.selectedAmpmButtonText,
+                            ]}
+                          >
+                            AM
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.ampmButton,
+                            !isAM && styles.selectedAmpmButton,
+                          ]}
+                          onPress={() => setIsAM(false)}
+                        >
+                          <Text
+                            style={[
+                              styles.ampmButtonText,
+                              !isAM && styles.selectedAmpmButtonText,
+                            ]}
+                          >
+                            PM
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                  
+                  {/* Confirm button */}
+                  <TouchableOpacity style={styles.confirmButton} onPress={handleTimeConfirm}>
+                    <Text style={styles.confirmButtonText}>Confirm</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+        
+        {/* Custom Duration Modal */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={showCustomTime}
+          onRequestClose={handleCloseCustomTime}
+        >
+          <TouchableWithoutFeedback onPress={handleCloseCustomTime}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback onPress={e => e.stopPropagation()}>
+                <View style={styles.customTimeModal}>
+                  <View style={styles.calendarHeader}>
+                    <Text style={styles.calendarTitle}>Set Custom Duration</Text>
+                    <TouchableOpacity onPress={handleCloseCustomTime} style={styles.closeButton}>
+                      <Ionicons name="close" size={adjust(20)} color="#333" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <View style={styles.customTimeContent}>
+                    <Text style={styles.customTimeLabel}>Enter duration:</Text>
+                    
+                    <View style={styles.customTimeInputRow}>
+                      <View style={styles.customTimeInputContainer}>
+                        <TextInput
+                          style={styles.customTimeInput}
+                          keyboardType="number-pad"
+                          value={customHours}
+                          onChangeText={setCustomHours}
+                          maxLength={2}
+                        />
+                        <Text style={styles.customTimeUnit}>hr</Text>
+                      </View>
+                      
+                      <View style={styles.customTimeSeparator}>
+                        <Text style={styles.customTimeSeparatorText}>:</Text>
+                      </View>
+                      
+                      <View style={styles.customTimeInputContainer}>
+                        <TextInput
+                          style={styles.customTimeInput}
+                          keyboardType="number-pad"
+                          value={customMinutes}
+                          onChangeText={setCustomMinutes}
+                          maxLength={2}
+                        />
+                        <Text style={styles.customTimeUnit}>min</Text>
+                      </View>
+                    </View>
+                    
+                    <TouchableOpacity style={styles.confirmButton} onPress={handleSaveCustomDuration}>
+                      <Text style={styles.confirmButtonText}>Save</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      </LinearGradient>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#b3d4ff',
+  },
+  background: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    paddingHorizontal: adjust(20),
+    paddingBottom: adjust(20),
+  },
+  header: {
+    marginTop: adjust(10),
+    marginBottom: adjust(15),
+  },
+  title: {
+    fontSize: adjust(18),
+    fontWeight: '600',
+    color: '#333',
+  },
+  subtitle: {
+    fontSize: adjust(12),
+    color: '#666',
+    marginTop: adjust(2),
+  },
+  // Activity list container - full width, no horizontal padding
+  activityListContainer: {
+    width: SCREEN_WIDTH,
+    marginHorizontal: -adjust(20),
+    paddingHorizontal: 0,
+    marginBottom: adjust(10),
+    overflow: 'visible',
+  },
+  activityList: {
+    paddingVertical: adjust(8),
+    paddingHorizontal: adjust(20),
+  },
+  activityItem: {
+    backgroundColor: '#FFD859',
+    borderRadius: adjust(20),
+    paddingHorizontal: adjust(15),
+    paddingVertical: adjust(8),
+    marginRight: adjust(10),
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  selectedActivityItem: {
+    backgroundColor: '#FFB319',
+  },
+  activityIconContainer: {
+    marginRight: adjust(5),
+  },
+  activityName: {
+    color: '#333',
+    fontWeight: '500',
+    fontSize: adjust(12),
+  },
+  planningCard: {
+    backgroundColor: '#fff',
+    borderRadius: adjust(15),
+    padding: adjust(16),
+    marginTop: adjust(10),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  inputLabel: {
+    fontSize: adjust(13),
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: adjust(5),
+  },
+  eventInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: adjust(10),
+    padding: adjust(12),
+    fontSize: adjust(13),
+    color: '#333',
+    marginBottom: adjust(15),
+  },
+  dateTimeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: adjust(15),
+  },
+  dateTimeButtonText: {
+    color: '#4361EE',
+    fontSize: adjust(13),
+    fontWeight: '500',
+    marginLeft: adjust(8),
+  },
+  dateTimeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: adjust(15),
+  },
+  dateContainer: {
+    flex: 1,
+  },
+  timeContainer: {
+    flex: 1,
+  },
+  dateTimeLabel: {
+    color: '#666',
+    fontSize: adjust(12),
+    marginBottom: adjust(4),
+  },
+  dateTimeValue: {
+    color: '#333',
+    fontSize: adjust(13),
+    fontWeight: '500',
+  },
+  durationLabel: {
+    color: '#666',
+    fontSize: adjust(12),
+    marginBottom: adjust(8),
+  },
+  durationOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: adjust(20),
+  },
+  durationButton: {
+    flex: 1,
+    backgroundColor: '#f2f2f2',
+    paddingVertical: adjust(9),
+    paddingHorizontal: adjust(10),
+    borderRadius: adjust(20),
+    marginRight: adjust(8),
+    alignItems: 'center',
+  },
+  selectedDurationButton: {
+    backgroundColor: '#4361EE',
+  },
+  durationButtonText: {
+    color: '#666',
+    fontSize: adjust(11),
+  },
+  selectedDurationText: {
+    color: '#fff',
+    fontWeight: '500',
+  },
+  forecastSection: {
+    marginBottom: adjust(10),
+  },
+  forecastHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: adjust(15),
+  },
+  forecastTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  forecastTitle: {
+    fontSize: adjust(13),
+    fontWeight: '500',
+    color: '#333',
+    marginLeft: adjust(8),
+  },
+  viewDetailsText: {
+    color: '#4361EE',
+    fontSize: adjust(12),
+  },
+  hourlyForecast: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  forecastItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  forecastTime: {
+    fontSize: adjust(11),
+    color: '#666',
+    marginBottom: adjust(5),
+  },
+  forecastTemp: {
+    fontSize: adjust(13),
+    fontWeight: '500',
+    color: '#333',
+    marginTop: adjust(5),
+  },
+  assistantCard: {
+    backgroundColor: '#517FE0',
+    borderRadius: adjust(15),
+    padding: adjust(16),
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: adjust(10),
+    marginBottom: adjust(15),
+  },
+  assistantIconContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: adjust(18),
+    width: adjust(36),
+    height: adjust(36),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: adjust(12),
+  },
+  assistantText: {
+    color: '#fff',
+    fontSize: adjust(13),
+    fontWeight: '500',
+    flex: 1,
+  },
+  checkButton: {
+    backgroundColor: '#FFD859',
+    borderRadius: adjust(15),
+    paddingVertical: adjust(14),
+    alignItems: 'center',
+    marginBottom: adjust(20),
+  },
+  checkButtonText: {
+    color: '#333',
+    fontSize: adjust(15),
+    fontWeight: '600',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: adjust(20),
+  },
+  calendarModal: {
+    backgroundColor: '#fff',
+    borderRadius: adjust(15),
+    padding: adjust(16),
+    width: '100%',
+    maxWidth: adjust(350),
+  },
+  customTimeModal: {
+    backgroundColor: '#fff',
+    borderRadius: adjust(15),
+    padding: adjust(16),
+    width: '100%',
+    maxWidth: adjust(350),
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: adjust(15),
+    paddingBottom: adjust(10),
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  calendarTitle: {
+    fontSize: adjust(15),
+    fontWeight: '600',
+    color: '#333',
+  },
+  closeButton: {
+    width: adjust(30),
+    height: adjust(30),
+    borderRadius: adjust(15),
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarSection: {
+    marginBottom: adjust(20),
+  },
+  sectionTitle: {
+    fontSize: adjust(13),
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: adjust(10),
+  },
+  dateItem: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: adjust(10),
+    padding: adjust(10),
+    marginRight: adjust(10),
+    alignItems: 'center',
+    minWidth: adjust(75),
+  },
+  selectedDateItem: {
+    backgroundColor: '#4361EE',
+  },
+  dateItemDay: {
+    fontSize: adjust(11),
+    color: '#666',
+    marginBottom: adjust(4),
+  },
+  dateItemNumber: {
+    fontSize: adjust(17),
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: adjust(2),
+  },
+  dateItemMonth: {
+    fontSize: adjust(11),
+    color: '#666',
+  },
+  selectedDateText: {
+    color: '#fff',
+  },
+  timeSection: {
+    marginBottom: adjust(20),
+  },
+  timeSelector: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: adjust(15),
+  },
+  timeSelectorUnit: {
+    alignItems: 'center',
+    marginHorizontal: adjust(10),
+  },
+  timeAdjustButton: {
+    width: adjust(40),
+    height: adjust(40),
+    borderRadius: adjust(20),
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: adjust(5),
+  },
+  timeValue: {
+    fontSize: adjust(24),
+    fontWeight: '600',
+    color: '#333',
+    marginVertical: adjust(5),
+    minWidth: adjust(40),
+    textAlign: 'center',
+  },
+  timeColon: {
+    fontSize: adjust(24),
+    fontWeight: '600',
+    color: '#333',
+  },
+  ampmSelector: {
+    flexDirection: 'column',
+    marginLeft: adjust(20),
+  },
+  ampmButton: {
+    width: adjust(50),
+    paddingVertical: adjust(8),
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: adjust(8),
+    backgroundColor: '#f0f0f0',
+    marginVertical: adjust(5),
+  },
+  selectedAmpmButton: {
+    backgroundColor: '#4361EE',
+  },
+  ampmButtonText: {
+    fontSize: adjust(14),
+    fontWeight: '500',
+    color: '#333',
+  },
+  selectedAmpmButtonText: {
+    color: '#fff',
+  },
+  confirmButton: {
+    backgroundColor: '#4361EE',
+    borderRadius: adjust(10),
+    paddingVertical: adjust(12),
+    alignItems: 'center',
+  },
+  confirmButtonText: {
+    color: '#fff',
+    fontSize: adjust(13),
+    fontWeight: '600',
+  },
+  // Custom time picker styles
+  customTimeContent: {
+    marginBottom: adjust(20),
+  },
+  customTimeLabel: {
+    fontSize: adjust(13),
+    color: '#666',
+    marginBottom: adjust(8),
+  },
+  customTimeInputRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: adjust(10),
+  },
+  customTimeInputContainer: {
+    flex: 1,
+    alignItems: 'center',
+    maxWidth: '45%', // Limit width to prevent crowding
+  },
+  customTimeInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: adjust(10),
+    padding: adjust(12),
+    fontSize: adjust(13),
+    color: '#333',
+    width: '100%', // Take full width of parent
+  },
+  customTimeUnit: {
+    fontSize: adjust(12),
+    color: '#666',
+    marginLeft: adjust(5),
+  },
+  customTimeSeparator: {
+    width: adjust(10),
+    textAlign: 'center',
+  },
+  customTimeSeparatorText: {
+    fontSize: adjust(12),
+    color: '#666',
+  },
+  // Planned events section
+  plannedEventsSection: {
+    marginTop: adjust(10),
+    marginBottom: adjust(15),
+  },
+  sectionTitleText: {
+    fontSize: adjust(14),
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: adjust(10),
+  },
+  plannedEventCard: {
+    backgroundColor: '#fff',
+    borderRadius: adjust(12),
+    padding: adjust(14),
+    marginBottom: adjust(10),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  plannedEventHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: adjust(8),
+  },
+  plannedEventActivity: {
+    fontSize: adjust(14),
+    fontWeight: '600',
+    color: '#333',
+  },
+  plannedEventDesc: {
+    fontSize: adjust(12),
+    color: '#666',
+    marginBottom: adjust(10),
+  },
+  plannedEventDetails: {
+    flexDirection: 'column',
+  },
+  plannedEventDetailsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: adjust(6),
+  },
+  plannedEventDetail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: adjust(10),
+    flexShrink: 1,
+  },
+  plannedEventDetailText: {
+    fontSize: adjust(12),
+    color: '#333',
+    marginLeft: adjust(5),
+    flexShrink: 1,
+  },
+  confirmEventButton: {
+    backgroundColor: '#4361EE',
+    borderRadius: adjust(10),
+    paddingVertical: adjust(12),
+    alignItems: 'center',
+    marginTop: adjust(15),
+  },
+  confirmEventButtonText: {
+    color: '#fff',
+    fontSize: adjust(13),
+    fontWeight: '600',
+  },
+});
+
+export default PlanningScreen; 

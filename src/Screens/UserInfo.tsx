@@ -9,16 +9,107 @@ import {
   Platform,
   ScrollView,
   StatusBar,
-  Dimensions
+  Alert,
+  PermissionsAndroid,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import adjust from '../utils/adjust';
-import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
+import { SCREEN_HEIGHT } from '../constants/dimesions';
+import { UserDataManager } from '../utils/userDataManager';
+import Geolocation from 'react-native-geolocation-service';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 
 const STANDARD_SPACING = adjust(15);
+
+// Create a global object to store user data
+interface UserDataType {
+  age: string;
+  gender: string;
+  occupation: string;
+  location: string;
+}
+
+export const UserData = {
+  age: '',
+  gender: '',
+  occupation: '',
+  location: '',
+  getAll: function(): UserDataType {
+    return {
+      age: this.age,
+      gender: this.gender,
+      occupation: this.occupation,
+      location: this.location
+    };
+  },
+  setAll: function(data: Partial<UserDataType>): void {
+    this.age = data.age || '';
+    this.gender = data.gender || '';
+    this.occupation = data.occupation || '';
+    this.location = data.location || '';
+  }
+};
+
+// Add a function to convert coordinates to location name using Nominatim API
+const reverseGeocode = async (latitude: number, longitude: number): Promise<string> => {
+  try {
+    // Using the free Nominatim API (OpenStreetMap)
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`,
+      {
+        headers: {
+          'User-Agent': 'SkylarWeatherApp/1.0',
+          'Accept-Language': 'en'
+        }
+      }
+    );
+    
+    const data = await response.json();
+    console.log('Geocoding response:', data);
+    
+    if (data && data.address) {
+      // Build a location string from the address components
+      const { city, town, village, county, state, country } = data.address;
+      
+      // Try to get the most specific location name available
+      const locationName = city || town || village || county || '';
+      const regionName = state || '';
+      const countryName = country || '';
+      
+      let locationString = '';
+      
+      if (locationName) {
+        locationString = locationName;
+        if (regionName && locationName !== regionName) {
+          locationString += `, ${regionName}`;
+        }
+        if (countryName && regionName !== countryName) {
+          locationString += `, ${countryName}`;
+        }
+      } else if (regionName) {
+        locationString = regionName;
+        if (countryName) {
+          locationString += `, ${countryName}`;
+        }
+      } else if (countryName) {
+        locationString = countryName;
+      }
+      
+      // If we couldn't parse a proper name, use display_name as fallback
+      return locationString || data.display_name || 'Location detected';
+    }
+    
+    throw new Error('No location data found');
+  } catch (error) {
+    console.error('Error in reverse geocoding:', error);
+    return 'Location detected'; // Fallback
+  }
+};
 
 const UserInfo = ({ navigation }: { navigation: any }) => {
   // State for form fields
@@ -27,23 +118,24 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
   const [occupation, setOccupation] = useState('');
   const [useLocation, setUseLocation] = useState(false);
   const [manualLocation, setManualLocation] = useState('');
-  const [activeStep, setActiveStep] = useState(1);
-  const [contentHeight, setContentHeight] = useState(0);
-  const contentRef = useRef(null);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const googlePlacesRef = useRef<any>(null);
 
   useEffect(() => {
-    // Configure header with back button
     if (navigation && navigation.setOptions) {
       navigation.setOptions({
         headerShown: false,
-        headerTransparent: true,
-        headerTitle: '',
-        headerStyle: {
-          elevation: 0,
-          shadowOpacity: 0,
-        }
       });
     }
+    
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: true });
+        }
+      });
+
+    return unsubscribe;
   }, [navigation]);
 
   // Handle gender selection
@@ -51,38 +143,187 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
     setGender(selectedGender);
   };
 
-  // Handle location detection
+  // Request location permissions
+  const requestLocationPermission = async () => {
+    try {
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: 'Location Permission',
+            message: 'This app needs access to your location to provide weather updates.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } else {
+        // For iOS, we don't need to explicitly request permission
+        // The requestAuthorization call happens internally in getCurrentPosition
+        return true;
+      }
+    } catch (err) {
+      console.warn(err);
+      return false;
+    }
+  };
+
+  // Get current location
+  const getCurrentLocation = async () => {
+    setIsDetectingLocation(true);
+    
+    // Set a timeout to prevent endless loading
+    const locationTimeout = setTimeout(() => {
+      if (isDetectingLocation) {
+        setIsDetectingLocation(false);
+        Alert.alert(
+          'Location Timeout',
+          'Location detection is taking too long. Please try again or enter your location manually.',
+          [{ text: 'OK' }]
+        );
+      }
+    }, 15000);
+    
+    try {
+      const hasPermission = await requestLocationPermission();
+      
+      if (!hasPermission) {
+        clearTimeout(locationTimeout);
+        setIsDetectingLocation(false);
+        Alert.alert(
+          'Permission Denied',
+          'Location permission was denied. Please enter your location manually.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      // For debugging purposes
+      console.log('Getting location...');
+      
+      // Use a Promise-based approach to handle geolocation
+      const position = await new Promise<Geolocation.GeoPosition>((resolve, reject) => {
+        Geolocation.getCurrentPosition(
+          (pos) => resolve(pos),
+          (error) => reject(error),
+          { 
+            enableHighAccuracy: false, // Set to false for faster response
+            timeout: 10000,
+            maximumAge: 1000 
+          }
+        );
+      });
+      
+      clearTimeout(locationTimeout);
+      console.log('Location obtained:', position);
+      
+      // Get the location name from coordinates
+      const { latitude, longitude } = position.coords;
+      
+      // Show coordinates temporarily while we fetch the location name
+      setManualLocation(`${latitude.toFixed(2)}, ${longitude.toFixed(2)}`);
+      setUseLocation(true);
+      
+      // Convert coordinates to human-readable location name
+      try {
+        const locationName = await reverseGeocode(latitude, longitude);
+        console.log('Location name:', locationName);
+        
+        // Update with the proper location name
+        setManualLocation(locationName);
+      } catch (err) {
+        console.error('Error in reverse geocoding:', err);
+        // Keep the coordinates as fallback
+        setManualLocation(`${latitude.toFixed(2)}, ${longitude.toFixed(2)}`);
+      }
+    } catch (error: any) {
+      clearTimeout(locationTimeout);
+      console.error('Error getting location:', error);
+      
+      let errorMessage = 'Could not get your location. Please enter it manually.';
+      if (error.code === 1) {
+        errorMessage = 'Location permission denied. Please enter your location manually.';
+      } else if (error.code === 2) {
+        errorMessage = 'Location unavailable. Please check your device settings and try again.';
+      } else if (error.code === 3) {
+        errorMessage = 'Location request timed out. Please try again or enter your location manually.';
+      }
+      
+      Alert.alert(
+        'Location Error',
+        errorMessage,
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsDetectingLocation(false);
+    }
+  };
+
+  // Handle location detection button press
   const handleDetectLocation = () => {
-    setUseLocation(true);
-    // In a real app, you would request location permissions and get actual location
+    console.log("Location detection requested");
+    getCurrentLocation();
   };
 
   // Handle next button press
-  const handleNext = () => {
-    navigation.navigate('DailyRoutine'); // Replace with your next screen
+  const handleNext = async () => {
+    // Validate inputs
+    if (!age) {
+      Alert.alert('Missing Information', 'Please enter your age.');
+      return;
+    }
+
+    if (!gender) {
+      Alert.alert('Missing Information', 'Please select your gender.');
+      return;
+    }
+    
+    // Save data to UserData global object
+    const locationToSave = manualLocation || (useLocation ? 'New York, NY' : '');
+    UserData.setAll({
+      age,
+      gender,
+      occupation,
+      location: locationToSave
+    });
+    
+    // Save to AsyncStorage
+    try {
+      await UserDataManager.saveUserProfile();
+      console.log('User profile data saved successfully');
+    } catch (error) {
+      console.error('Error saving user profile data:', error);
+    }
+    
+    // Navigate to next screen
+    navigation.navigate('DailyRoutine');
   };
 
   // Show info dialog about why we ask for this info
   const showWhyWeAsk = () => {
-    // In a real app, you would show a modal or dialog here
-    console.log('Show why we ask for this info');
+    Alert.alert(
+      'Why We Ask For Your Information',
+      'Skylar uses your age, gender, and location to provide personalized weather recommendations, clothing suggestions, and health tips relevant to your demographic and local conditions.',
+      [{ text: 'Got it!' }]
+    );
   };
 
-  const handleContentLayout = (event: any) => {
-    const { height } = event.nativeEvent.layout;
-    setContentHeight(height);
-  };
-
-  const needsScrollView = contentHeight > SCREEN_HEIGHT * 0.9;
-
-  const renderContent = () => (
-    <LinearGradient
-      colors={['#c9e3ff', '#7698ee']}
-      style={styles.background}
-    >
+  return (
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      <LinearGradient colors={['#b3d4ff', '#5c85e6']} style={styles.background}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboardAvoid}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+          enabled
+        >
+          <ScrollView 
+            ref={scrollViewRef}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="always"
+            contentContainerStyle={styles.scrollContent}
       >
         {/* Custom Header with Back Button */}
         <View style={styles.headerContainer}>
@@ -91,7 +332,7 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
             activeOpacity={0.8}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-left" size={adjust(20)} color="#333" />
+                <Ionicons name="chevron-back" size={adjust(20)} color="#333" />
           </TouchableOpacity>
         </View>
         
@@ -187,24 +428,57 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
         <View style={styles.inputContainer}>
           <Text style={styles.inputLabel}>Where are you located?</Text>
           
-          <TouchableOpacity 
-            style={styles.locationButton}
+          {/* Button to detect location */}
+          <TouchableOpacity
+            style={styles.locationDetectButton}
             onPress={handleDetectLocation}
+            disabled={isDetectingLocation}
           >
-            <Ionicons name="location-outline" size={adjust(18)} color="#333" />
-            <Text style={styles.locationButtonText}>Detect my location</Text>
+            <Ionicons name="location" size={adjust(16)} color="#fff" />
+            <Text style={styles.locationDetectText}>
+              {isDetectingLocation ? 'Detecting...' : 'Detect My Location'}
+            </Text>
           </TouchableOpacity>
           
-          <TextInput
-            style={[styles.textInput, styles.locationInput]}
-            placeholder="Or enter your location manually"
-            placeholderTextColor="#8e9aaf"
-            value={manualLocation}
-            onChangeText={setManualLocation}
-            editable={!useLocation}
-          />
+          {/* Divider */}
+          <View style={styles.dividerContainer}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
+          
+          {/* Google Places Autocomplete */}
+          <View style={styles.placesInputContainer}>
+            <View style={styles.locationIconContainer}>
+              <Ionicons name="search" size={adjust(16)} color="#666" />
+            </View>
+            <TextInput
+              style={{
+                height: adjust(42),
+                paddingHorizontal: adjust(12),
+                paddingLeft: adjust(35),
+                fontSize: adjust(13),
+                color: '#333',
+                backgroundColor: '#f8f9fa',
+                borderRadius: adjust(8),
+                borderColor: '#e0e0e0',
+                borderWidth: 1,
+              }}
+              placeholder="Enter your city or area"
+              placeholderTextColor="#8e9aaf"
+              value={manualLocation}
+              onChangeText={(text) => setManualLocation(text)}
+            />
+          </View>
+          
+          {/* Selected Location Display */}
+          {manualLocation ? (
+            <View style={styles.selectedLocationContainer}>
+              <Ionicons name="checkmark-circle" size={adjust(18)} color="#4CD964" />
+              <Text style={styles.selectedLocationText}>{manualLocation}</Text>
+            </View>
+          ) : null}
         </View>
-
 
         {/* Why do we ask this */}
         <TouchableOpacity 
@@ -216,44 +490,35 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
         </TouchableOpacity>
 
         {/* Next Button */}
-        <TouchableOpacity 
-          style={styles.nextButton}
+        <TouchableOpacity
+          style={[
+            styles.nextButton,
+            (!age || !gender) && styles.disabledButton
+          ]}
           onPress={handleNext}
+          disabled={!age || !gender}
         >
           <Text style={styles.nextButtonText}>Next</Text>
-          <Ionicons name="chevron-forward" size={adjust(18)} color="#fff" />
+          <Ionicons name="arrow-forward" size={adjust(16)} color="#fff" />
         </TouchableOpacity>
-
-        {/* Progress Bar */}
-        {/* <View style={styles.progressContainer}>
-          <View style={styles.progressBar} />
-        </View> */}
+          </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
-  );
 
-  return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
-      
-      <View 
-        ref={contentRef} 
-        onLayout={handleContentLayout} 
-        style={[styles.measureContainer, { position: 'absolute', opacity: 0 }]}
-      >
-        {renderContent()}
+    {/* Loading Overlay */}
+    <Modal
+      transparent={true}
+      animationType="fade"
+      visible={isDetectingLocation}
+      onRequestClose={() => setIsDetectingLocation(false)}
+    >
+      <View style={styles.loadingOverlay}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4361EE" />
+          <Text style={styles.loadingText}>Detecting your location...</Text>
+        </View>
       </View>
-      
-      {needsScrollView ? (
-        <ScrollView 
-          contentContainerStyle={styles.scrollContainer}
-          showsVerticalScrollIndicator={false}
-        >
-          {renderContent()}
-        </ScrollView>
-      ) : (
-        renderContent()
-      )}
+    </Modal>
     </SafeAreaView>
   );
 };
@@ -261,97 +526,93 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#c9e3ff',
-  },
-  measureContainer: {
-    width: '100%',
+    backgroundColor: '#b3d4ff',
   },
   background: {
     flex: 1,
   },
+  keyboardAvoid: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: adjust(12),
+  },
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: STANDARD_SPACING/2,
-    paddingTop: Platform.OS === 'ios' ? adjust(10) : 0,
+    width: '100%',
+    paddingTop: Platform.OS === 'ios' ? adjust(1) : StatusBar.currentHeight ? StatusBar.currentHeight + adjust(1) : adjust(1),
+    paddingLeft: adjust(5),
+    marginBottom: adjust(20),
   },
   backButton: {
-    // padding: STANDARD_SPACING/2,
-  },
-  keyboardAvoid: {
-    flex: 1,
-    paddingHorizontal: STANDARD_SPACING,
-    paddingTop: Platform.OS === 'ios' ? adjust(50) : StatusBar.currentHeight ? StatusBar.currentHeight + adjust(0) : adjust(0),
-    paddingBottom: STANDARD_SPACING,
-  },
-  scrollContainer: {
-    flexGrow: 1,
+    width: adjust(32),
+    height: adjust(32),
+    borderRadius: adjust(18),
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: adjust(6),
   },
   titleContainer: {
     width: '100%',
-    marginTop: adjust(4),
-    marginBottom: adjust(8),
+    alignItems: 'center',
+    marginBottom: adjust(4),
   },
   headerText: {
-    fontSize: adjust(18),
-    fontWeight: 'bold',
+    fontSize: adjust(20),
+    fontWeight: '600',
     color: '#333',
-    marginLeft: STANDARD_SPACING,
+    textAlign: 'center',
+    marginBottom: adjust(4),
   },
   subHeaderText: {
     fontSize: adjust(12),
-    color: '#333',
+    color: '#666',
     textAlign: 'center',
-    marginBottom: STANDARD_SPACING * 1.5,
-    paddingHorizontal: STANDARD_SPACING,
+    marginBottom: adjust(16),
   },
   inputContainer: {
     backgroundColor: '#fff',
-    borderRadius: adjust(14),
-    padding: STANDARD_SPACING/1.5,
-    marginBottom: STANDARD_SPACING,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
+    borderRadius: adjust(12),
+    padding: adjust(12),
+    marginBottom: adjust(12),
   },
   inputLabel: {
-    fontSize: adjust(12),
+    fontSize: adjust(13),
     fontWeight: '600',
     color: '#333',
-    marginBottom: STANDARD_SPACING/2,
+    marginBottom: adjust(8),
   },
   textInput: {
-    height: adjust(35),
-    paddingHorizontal: STANDARD_SPACING,
-    fontSize: adjust(12),
+    height: adjust(42),
+    paddingHorizontal: adjust(12),
+    fontSize: adjust(13),
     color: '#333',
     backgroundColor: '#f8f9fa',
-    borderRadius: adjust(10),
+    borderRadius: adjust(8),
     borderColor: '#e0e0e0',
     borderWidth: 1,
   },
   inputHelperText: {
-    fontSize: adjust(10),
-    color: '#8e9aaf',
-    marginTop: STANDARD_SPACING/3,
+    fontSize: adjust(11),
+    color: '#666',
+    marginTop: adjust(6),
   },
   genderContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: adjust(4),
   },
   genderButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: STANDARD_SPACING/1.5,
-    backgroundColor: '#f8f9fa',
-    borderRadius: adjust(10),
-    marginHorizontal: STANDARD_SPACING/3,
+    paddingVertical: adjust(12),
+    backgroundColor: '#f1f1f1',
+    borderRadius: adjust(8),
+    marginHorizontal: adjust(4),
   },
   selectedGender: {
     backgroundColor: '#e0f0ff',
@@ -359,46 +620,85 @@ const styles = StyleSheet.create({
     borderColor: '#4361ee',
   },
   genderText: {
-    fontSize: adjust(10),
+    fontSize: adjust(12),
     color: '#333',
-    marginTop: STANDARD_SPACING/3,
+    marginTop: adjust(6),
   },
-  locationButton: {
+  locationDetectButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f8f9fa',
-    borderRadius: adjust(10),
-    height: adjust(40),
-    marginBottom: STANDARD_SPACING/1.5,
+    backgroundColor: '#4361EE',
+    borderRadius: adjust(8),
+    paddingVertical: adjust(12),
+    marginTop: STANDARD_SPACING,
   },
-  locationButtonText: {
-    fontSize: adjust(10),
+  locationDetectText: {
+    color: '#fff',
+    fontWeight: '500',
+    marginLeft: adjust(8),
+    fontSize: adjust(14),
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: STANDARD_SPACING,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  dividerText: {
+    marginHorizontal: adjust(10),
+    color: '#666',
+    fontSize: adjust(12),
+  },
+  placesInputContainer: {
+    marginBottom: STANDARD_SPACING,
+    position: 'relative',
+  },
+  locationIconContainer: {
+    position: 'absolute',
+    left: adjust(10),
+    top: adjust(15),
+    zIndex: 10,
+  },
+  selectedLocationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: adjust(10),
+    padding: adjust(12),
+    backgroundColor: 'rgba(76, 217, 100, 0.1)',
+    borderRadius: adjust(8),
+    borderWidth: 1,
+    borderColor: 'rgba(76, 217, 100, 0.3)',
+  },
+  selectedLocationText: {
+    fontSize: adjust(15),
     color: '#333',
-    marginLeft: STANDARD_SPACING/2,
-  },
-  locationInput: {
-    marginTop: 0,
+    marginLeft: adjust(8),
+    fontWeight: '500',
   },
   whyContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: STANDARD_SPACING,
+    marginBottom: adjust(12),
   },
   whyText: {
-    fontSize: adjust(10),
+    fontSize: adjust(12),
     color: '#333',
-    marginLeft: STANDARD_SPACING/3,
+    marginLeft: adjust(8),
   },
   nextButton: {
     flexDirection: 'row',
-    backgroundColor: '#7698ee',
+    backgroundColor: '#517FE0',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: adjust(30),
-    paddingVertical: STANDARD_SPACING/1.5,
-    marginBottom: STANDARD_SPACING,
+    paddingVertical: adjust(15),
+    marginBottom: adjust(15),
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -412,7 +712,37 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: adjust(14),
     fontWeight: 'bold',
-    marginRight: STANDARD_SPACING/3,
+    marginRight: adjust(8),
+  },
+  disabledButton: {
+    backgroundColor: '#ccc',
+  },
+  // Loading styles
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContainer: {
+    width: adjust(250),
+    height: adjust(120),
+    backgroundColor: '#fff',
+    borderRadius: adjust(12),
+    padding: adjust(20),
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  loadingText: {
+    marginTop: adjust(10),
+    fontSize: adjust(14),
+    color: '#333',
+    fontWeight: '500',
   },
 });
 

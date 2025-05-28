@@ -7,6 +7,7 @@ import {
   StatusBar,
   ScrollView,
   FlatList,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -14,8 +15,11 @@ import Feather from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
+import { UserDataManager } from '../utils/userDataManager';
 
 const STANDARD_SPACING = adjust(12);
 
@@ -31,7 +35,7 @@ const healthOptions = [
   { id: 'allergies', label: 'Allergies', icon: 'allergy' },
   { id: 'asthma', label: 'Asthma', icon: 'lungs' },
   { id: 'sensitivity', label: 'Sensitivity', icon: 'snowflake-o' },
-  { id: 'migraine', label: 'Migraine', icon: 'head-side-virus' },
+  { id: 'migraine', label: 'Migraine', icon: 'emoticon-sick-outline', iconFamily: 'MaterialCommunityIcons' },
   { id: 'arthritis', label: 'Arthritis', icon: 'bone' },
   { id: 'skin', label: 'Skin Issues', icon: 'hand-paper-o' },
   { id: 'heart', label: 'Heart Issues', icon: 'heartbeat' },
@@ -40,14 +44,39 @@ const healthOptions = [
 // Activity options
 const activityOptions = [
   { id: 'bbq', label: 'BBQ', icon: 'restaurant' },
-  { id: 'hiking', label: 'Hiking', icon: 'md-walk' },
-  { id: 'outdoor', label: 'Outdoor Party', icon: 'md-people' },
-  { id: 'beach', label: 'Beach', icon: 'umbrella-beach' },
-  { id: 'camping', label: 'Camping', icon: 'campground' },
-  { id: 'sports', label: 'Sports', icon: 'football' },
+  { id: 'hiking', label: 'Hiking', icon: 'hiking', iconFamily: 'FontAwesome5' },
+  { id: 'outdoor', label: 'Outdoor Party', icon: 'outdoor-grill', iconFamily: 'MaterialIcons' },
+  { id: 'beach', label: 'Beach', icon: 'beach', iconFamily: 'MaterialCommunityIcons' },
+  { id: 'camping', label: 'Camping', icon: 'campground', iconFamily: 'FontAwesome5' },
+  { id: 'sports', label: 'Sports', icon: 'sports-soccer', iconFamily: 'MaterialIcons' },
   { id: 'gardening', label: 'Gardening', icon: 'leaf' },
   { id: 'cycling', label: 'Cycling', icon: 'bicycle' },
 ];
+
+// Create a global object to store user preferences
+interface PreferenceDataType {
+  style: string | null;
+  healthConcerns: string[];
+  activities: string[];
+}
+
+export const PreferenceData = {
+  style: null as string | null,
+  healthConcerns: [] as string[],
+  activities: [] as string[],
+  getAll: function(): PreferenceDataType {
+    return {
+      style: this.style,
+      healthConcerns: [...this.healthConcerns],
+      activities: [...this.activities],
+    };
+  },
+  setAll: function(data: Partial<PreferenceDataType>): void {
+    this.style = data.style ?? this.style;
+    this.healthConcerns = data.healthConcerns ? [...data.healthConcerns] : this.healthConcerns;
+    this.activities = data.activities ? [...data.activities] : this.activities;
+  },
+};
 
 const PreferenceScreen = ({ navigation }: { navigation: any }) => {
   // State for preferences
@@ -59,6 +88,7 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
   const contentRef = useRef(null);
   const healthSliderRef = useRef<FlatList>(null);
   const activitySliderRef = useRef<FlatList>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     // Hide header on mount
@@ -67,13 +97,36 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
         headerShown: false
       });
     }
+
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: true });
+      }
+    });
+
+    return unsubscribe;
   }, [navigation]);
 
   const handleBack = () => {
     navigation.goBack('DailyRoutine');
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    // Save data to PreferenceData global object
+    PreferenceData.setAll({
+      style: selectedStyle,
+      healthConcerns: selectedHealthConcerns,
+      activities: selectedActivities,
+    });
+    
+    // Save to AsyncStorage
+    try {
+      await UserDataManager.savePreferences();
+      console.log('Preference data saved successfully');
+    } catch (error) {
+      console.error('Error saving preference data:', error);
+    }
+    
     // Navigate to next screen
     navigation.navigate('OnboardingScreen');
   };
@@ -137,7 +190,7 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
         <IconComponent 
           name={item.icon as any} 
           size={adjust(14)} 
-          color={isSelected ? "#fff" : "#333"} 
+          color={isSelected ? "#fff" : "#517FE0"} 
           style={styles.pillIcon}
         />
         <Text 
@@ -154,32 +207,36 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
 
   // Render activity item for FlatList
   const renderActivityItem = ({ item }: { item: typeof activityOptions[0] }) => {
-    const isSelected = selectedActivities.includes(item.id);
-    
-    // Determine which icon library to use based on the icon name
-    let IconComponent = Ionicons;
-    if (['umbrella-beach', 'campground', 'football', 'leaf', 'bicycle'].includes(item.icon)) {
-      IconComponent = FontAwesome;
+    let IconComponent;
+    switch (item.iconFamily) {
+      case 'FontAwesome5':
+        IconComponent = FontAwesome5;
+        break;
+      case 'MaterialIcons':
+        IconComponent = MaterialIcons;
+        break;
+      case 'MaterialCommunityIcons':
+        IconComponent = MaterialCommunityIcons;
+        break;
+      default:
+        IconComponent = Ionicons;
     }
     
     return (
       <TouchableOpacity 
-        style={[
-          styles.pillButton, 
-          isSelected && styles.selectedPillButton,
-        ]} 
+        style={[styles.pillButton, selectedActivities.includes(item.id) && styles.selectedPillButton]} 
         onPress={() => toggleActivity(item.id)}
       >
         <IconComponent 
-          name={item.icon as any} 
+          name={item.icon} 
           size={adjust(14)} 
-          color={isSelected ? "#fff" : "#333"} 
+          color={selectedActivities.includes(item.id) ? "#fff" : "#517FE0"} 
           style={styles.pillIcon}
         />
         <Text 
           style={[
             styles.pillText, 
-            isSelected && styles.selectedPillText
+            selectedActivities.includes(item.id) && styles.selectedPillText
           ]}
         >
           {item.label}
@@ -189,13 +246,6 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const renderContent = () => (
-    <LinearGradient
-      colors={['#c9e3ff', '#7698ee']}
-      style={styles.background}
-    >
-      <StatusBar backgroundColor="transparent" translucent barStyle="dark-content" />
-      
-      <SafeAreaView style={styles.safeArea}>
         <View style={styles.container}>
           {/* Custom Header with Back Button */}
           <View style={styles.headerContainer}>
@@ -238,13 +288,13 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
                   >
                     <View style={styles.styleTextContainer}>
                       {style.id === 'casual' && (
-                        <Ionicons name="shirt-outline" size={adjust(18)} color="#333" style={styles.styleIcon} />
+                    <Ionicons name="shirt-outline" size={adjust(22)} color="#517FE0" style={styles.styleIcon} />
                       )}
                       {style.id === 'professional' && (
-                        <Ionicons name="briefcase-outline" size={adjust(18)} color="#333" style={styles.styleIcon} />
+                    <Ionicons name="briefcase-outline" size={adjust(22)} color="#517FE0" style={styles.styleIcon} />
                       )}
                       {style.id === 'sporty' && (
-                        <Ionicons name="body-outline" size={adjust(18)} color="#333" style={styles.styleIcon} />
+                    <Ionicons name="body-outline" size={adjust(22)} color="#517FE0" style={styles.styleIcon} />
                       )}
                       <View>
                         <Text style={styles.styleLabel}>{style.label}</Text>
@@ -304,19 +354,24 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
             </TouchableOpacity>
           </View>
         </View>
-      </SafeAreaView>
-    </LinearGradient>
   );
 
-  // Always use ScrollView to ensure everything is visible
   return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      <LinearGradient
+        colors={['#b3d4ff', '#5c85e6']}
+        style={styles.background}
+      >
     <ScrollView
-      style={styles.scrollView}
-      contentContainerStyle={styles.scrollViewContent}
+          ref={scrollViewRef}
       showsVerticalScrollIndicator={false}
+          bounces={false}
     >
       {renderContent()}
     </ScrollView>
+      </LinearGradient>
+    </SafeAreaView>
   );
 };
 
@@ -326,34 +381,29 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollViewContent: {
-    flexGrow: 1,
+    backgroundColor: '#b3d4ff',
   },
   container: {
     flex: 1,
-    paddingHorizontal: adjust(16),
+    paddingHorizontal: adjust(10),
   },
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
     paddingHorizontal: adjust(2),
-    paddingTop: adjust(8),
+    paddingTop: Platform.OS === 'ios' ? adjust(1) : StatusBar.currentHeight ? StatusBar.currentHeight + adjust(1) : adjust(1),
     paddingBottom: adjust(4),
   },
 
   backButton: {
-    width: adjust(36),
-    height: adjust(36),
+    width: adjust(32),
+    height: adjust(32),
     borderRadius: adjust(18),
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: adjust(6),
+    marginLeft: adjust(10),
   },
   contentContainer: {
     flex: 1,
@@ -378,7 +428,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: adjust(12),
-    color: '#555',
+    color: '#333',
     textAlign: 'center',
     paddingHorizontal: adjust(5),
     lineHeight: adjust(18),
@@ -403,7 +453,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: adjust(10),
     paddingHorizontal: adjust(15),
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: adjust(15),
     marginBottom: adjust(8),
     shadowColor: '#000',
@@ -411,11 +461,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 2,
-    borderWidth: 0, // Default no border
+    borderWidth: 0,
   },
   activeStyleOptionCard: {
     borderWidth: 2,
-    borderColor: '#7698ee',
+    borderColor: '#517FE0',
   },
   styleTextContainer: {
     flexDirection: 'row',
@@ -431,7 +481,7 @@ const styles = StyleSheet.create({
   },
   styleDescription: {
     fontSize: adjust(12),
-    color: '#888',
+    color: '#666',
   },
   radioContainer: {
     alignItems: 'center',
@@ -442,7 +492,7 @@ const styles = StyleSheet.create({
     height: adjust(20),
     borderRadius: adjust(10),
     borderWidth: 2,
-    borderColor: '#7698ee',
+    borderColor: '#517FE0',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -450,7 +500,7 @@ const styles = StyleSheet.create({
     width: adjust(10),
     height: adjust(10),
     borderRadius: adjust(5),
-    backgroundColor: '#7698ee',
+    backgroundColor: '#517FE0',
   },
   sliderWrapper: {
     width: SCREEN_WIDTH,
@@ -464,7 +514,7 @@ const styles = StyleSheet.create({
   pillButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: adjust(20),
     paddingVertical: adjust(8),
     paddingHorizontal: adjust(14),
@@ -476,7 +526,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   selectedPillButton: {
-    backgroundColor: '#7698ee',
+    backgroundColor: '#517FE0',
   },
   pillIcon: {
     marginRight: adjust(5),
@@ -491,7 +541,7 @@ const styles = StyleSheet.create({
   },
   nextButton: {
     flexDirection: 'row',
-    backgroundColor: '#7698ee',
+    backgroundColor: '#517FE0',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: adjust(22),

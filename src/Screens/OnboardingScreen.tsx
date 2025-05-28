@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -15,9 +16,11 @@ import Feather from 'react-native-vector-icons/Feather';
 import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
 import Umbrella from 'react-native-vector-icons/FontAwesome5'
+import { UserDataManager } from '../utils/userDataManager';
 
 const OnboardingScreen = ({ navigation }: { navigation: any }) => {
   const [contentHeight, setContentHeight] = useState(0);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     // Hide header on mount
@@ -26,6 +29,14 @@ const OnboardingScreen = ({ navigation }: { navigation: any }) => {
         headerShown: false
       });
     }
+
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: true });
+      }
+    });
+
+    return unsubscribe;
   }, [navigation]);
 
   const handleBack = () => {
@@ -35,12 +46,12 @@ const OnboardingScreen = ({ navigation }: { navigation: any }) => {
   const handleEnableNotifications = () => {
     // Logic to request notification permissions would go here
     // Then navigate to next screen
-    navigation.navigate('Home');
+    navigation.navigate('Intro');
   };
 
   const handleMaybeLater = () => {
     // Navigate but don't enable notifications
-    navigation.navigate('Home');
+    navigation.navigate('Intro');
   };
 
   const handleContentLayout = (event: any) => {
@@ -49,6 +60,16 @@ const OnboardingScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const needsScrollView = contentHeight > SCREEN_HEIGHT * 0.9;
+
+  const handleComplete = async () => {
+    try {
+      // Save all user data and navigate to main app
+      await UserDataManager.saveAllData();
+      navigation.navigate('MainApp');
+    } catch (error) {
+      console.error('Error saving onboarding data:', error);
+    }
+  };
 
   const renderContent = () => (
     <View style={styles.contentContainer} onLayout={handleContentLayout}>
@@ -131,20 +152,18 @@ const OnboardingScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
       <LinearGradient
-        colors={['#c9e3ff', '#7698ee']}
+        colors={['#b3d4ff', '#5c85e6']}
         style={styles.background}
       >
-        {needsScrollView ? (
-          <ScrollView 
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {renderContent()}
-          </ScrollView>
-        ) : (
-          renderContent()
-        )}
+        <ScrollView 
+          ref={scrollViewRef}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {renderContent()}
+        </ScrollView>
       </LinearGradient>
     </SafeAreaView>
   );
@@ -153,7 +172,7 @@ const OnboardingScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#c9e3ff', // Match the gradient start color
+    backgroundColor: '#b3d4ff', // Match the gradient start color
   },
   background: {
     flex: 1,
@@ -175,13 +194,14 @@ const styles = StyleSheet.create({
     marginBottom: adjust(5),
   },
   backButton: {
-    width: adjust(36),
-    height: adjust(36),
+    width: adjust(32),
+    height: adjust(32),
     borderRadius: adjust(18),
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: adjust(8),
+    marginLeft: adjust(8),
+    marginTop: adjust(10),
   },
   iconContainer: {
     alignItems: 'center',
@@ -191,9 +211,9 @@ const styles = StyleSheet.create({
     // zIndex: 1,
   },
   iconCircle: {
-    width: adjust(200),
-    height: adjust(200),
-    borderRadius: adjust(100),
+    width: adjust(170),
+    height: adjust(170),
+    borderRadius: adjust(85),
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -264,7 +284,7 @@ const styles = StyleSheet.create({
   },
   enableButton: {
     flexDirection: 'row',
-    backgroundColor: '#4361ee',
+    backgroundColor: '#517FE0',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: adjust(25),

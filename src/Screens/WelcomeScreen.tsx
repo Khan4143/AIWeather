@@ -17,10 +17,12 @@ import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Icons from 'react-native-vector-icons/Feather';
+import { UserDataManager } from '../utils/userDataManager';
 
 const WelcomeScreen = ({ navigation }: { navigation: any }) => {
   const [contentHeight, setContentHeight] = useState(0);
   const contentRef = useRef(null);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     // Hide header on mount
@@ -29,10 +31,40 @@ const WelcomeScreen = ({ navigation }: { navigation: any }) => {
         headerShown: false
       });
     }
+
+    // Check if user data already exists, then redirect to main app
+    // But only if not intentionally accessing onboarding from profile
+    const checkExistingUser = async () => {
+      const route = navigation.getState().routes.find((r: any) => r.name === 'Welcome');
+      const bypassCheck = route?.params?.bypassOnboardingCheck;
+      
+      // Skip the redirect if we're intentionally going to onboarding
+      if (bypassCheck) return;
+      
+      const userData = UserDataManager.getAllUserData();
+      const hasUserData = userData.profile && 
+                         userData.profile.location && 
+                         userData.dailyRoutine && 
+                         userData.preferences;
+                          
+      if (hasUserData) {
+        navigation.replace('MainApp');
+      }
+    };
+    
+    checkExistingUser();
+
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: true });
+      }
+    });
+
+    return unsubscribe;
   }, [navigation]);
 
   const handleNavigate = () => {
-    navigation.navigate('UserInfo'); // Replace 'Home' with your next screen name
+    navigation.navigate('UserInfo');
   };
 
   const handleContentLayout = (event: any) => {
@@ -44,7 +76,7 @@ const WelcomeScreen = ({ navigation }: { navigation: any }) => {
 
   const renderContent = () => (
     <LinearGradient
-      colors={['#c9e3ff', '#7698ee']}
+      colors={['#b3d4ff', '#5c85e6']}
       style={styles.background}
     >
       {/* Background Bubbles */}
@@ -135,7 +167,11 @@ const WelcomeScreen = ({ navigation }: { navigation: any }) => {
       </View>
       
       {needsScrollView ? (
-        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          ref={scrollViewRef}
+          contentContainerStyle={styles.scrollContainer} 
+          showsVerticalScrollIndicator={false}
+        >
           {renderContent()}
         </ScrollView>
       ) : (
@@ -148,7 +184,7 @@ const WelcomeScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#c9e3ff',
+    backgroundColor: '#b3d4ff',
   },
   measureContainer: {
     width: '100%',
@@ -268,7 +304,7 @@ const styles = StyleSheet.create({
   },
   button: {
     width: '100%',
-    backgroundColor: '#7698ee',
+    backgroundColor: '#517FE0',
     paddingVertical: adjust(14),
     borderRadius: adjust(30),
     alignItems: 'center',

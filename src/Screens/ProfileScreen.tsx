@@ -7,6 +7,7 @@ import {
   Image,
   TouchableOpacity,
   Switch,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -18,6 +19,17 @@ import { SCREEN_WIDTH } from '../constants/dimesions';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { UserDataManager } from '../utils/userDataManager';
 import { useFocusEffect } from '@react-navigation/native';
+import { UserData } from '../Screens/UserInfo';
+import { DailyRoutineData } from '../Screens/DailyRoutine';
+import { PreferenceData } from '../Screens/PreferenceScreen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Storage keys (should match UserDataManager's keys)
+const STORAGE_KEYS = {
+  USER_PROFILE: 'skylar_user_profile',
+  DAILY_ROUTINE: 'skylar_daily_routine',
+  PREFERENCES: 'skylar_preferences',
+};
 
 // Add interfaces that match the actual data structures
 interface UserDataType {
@@ -38,7 +50,6 @@ interface DailyRoutineType {
   };
   eveningActivity: string | null;
   selectedActivity: string | null;
-  selectedActivities: string[];
   activities: string[];
 }
 
@@ -78,14 +89,17 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
   const [temperatureUnit, setTemperatureUnit] = useState('°F');
   const [languagePreference, setLanguagePreference] = useState('English');
   const [selectedActivities, setSelectedActivities] = useState<string[]>([]);
+  // Add states for preference data
+  const [stylePreference, setStylePreference] = useState<string | null>(null);
+  const [healthConcerns, setHealthConcerns] = useState<string[]>([]);
+  const [preferredActivities, setPreferredActivities] = useState<string[]>([]);
 
   // Morning activities
   const allMorningActivities = [
     { id: '1', name: 'Running', icon: 'run', selected: false },
     { id: '2', name: 'Yoga', icon: 'yoga', selected: false },
-    { id: '3', name: 'Coffee', icon: 'coffee', selected: false },
-    { id: '4', name: 'Reading', icon: 'book', selected: false },
     { id: '5', name: 'Gym', icon: 'weight-lifter', selected: false },
+    { id: '6', name: 'Dog Walk', icon: 'dog', selected: false },
   ];
 
   const [morningActivities, setMorningActivities] = useState(allMorningActivities);
@@ -93,124 +107,264 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
   const [userCommuteTime, setUserCommuteTime] = useState({ hours: 8, minutes: 0, isAM: true });
   const [userEveningActivity, setUserEveningActivity] = useState('');
 
-  // Load user data when the component mounts and when screen comes into focus
+  // Function to refresh data - extract this from useFocusEffect for reuse
+  const refreshData = async () => {
+    try {
+      console.log("===== PROFILE SCREEN: Starting data refresh from AsyncStorage =====");
+      
+      // First, directly check what's in AsyncStorage for debugging
+      const profileJson = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
+      if (profileJson) {
+        console.log("PROFILE SCREEN - Raw profile data in AsyncStorage:", profileJson);
+      } else {
+        console.warn("PROFILE SCREEN - No profile data found in AsyncStorage!");
+      }
+      
+      // Force a complete reload from AsyncStorage
+      await UserDataManager.loadAllData();
+      
+      // Get the freshly loaded data
+      const userData = UserDataManager.getAllUserData();
+      console.log("PROFILE SCREEN - Loaded user data:", JSON.stringify(userData, null, 2));
+      
+      // Update all state variables with fresh data
+      if (userData.profile) {
+        const profile = userData.profile as UserDataType;
+        console.log("PROFILE SCREEN - Setting profile data:", JSON.stringify(profile, null, 2));
+        setUserOccupation(profile.occupation || '');
+        setUserName(profile.name || profile.occupation || '');
+        setUserLocation(profile.location || '');
+        setUserAge(profile.age || '');
+        setUserGender(profile.gender || '');
+      } else {
+        console.log("PROFILE SCREEN - No profile data found!");
+      }
+      
+      if (userData.preferences) {
+        const preferences = userData.preferences as PreferenceDataType;
+        console.log("PROFILE SCREEN - Setting preferences data");
+        setCommuteAlerts(preferences.notifications?.commute || false);
+        setClothingSuggestions(preferences.notifications?.clothing || false);
+        setHealthTips(preferences.notifications?.health || false);
+        setEventReminders(preferences.notifications?.events || false);
+        
+        if (preferences.units?.temperature) {
+          setTemperatureUnit(preferences.units.temperature);
+        }
+        
+        if (preferences.language) {
+          setLanguagePreference(preferences.language);
+        }
+        
+        if (preferences.style) {
+          setStylePreference(preferences.style);
+        }
+        
+        if (preferences.healthConcerns && Array.isArray(preferences.healthConcerns)) {
+          setHealthConcerns([...preferences.healthConcerns]);
+        }
+        
+        if (preferences.activities && Array.isArray(preferences.activities)) {
+          setPreferredActivities([...preferences.activities]);
+        }
+      }
+      
+      if (userData.dailyRoutine) {
+        const dailyRoutine = userData.dailyRoutine as DailyRoutineType;
+        console.log("PROFILE SCREEN - Setting daily routine data");
+        
+        if (dailyRoutine.commuteMethod) {
+          setUserCommuteMethod(dailyRoutine.commuteMethod);
+        }
+        
+        if (dailyRoutine.commuteTime) {
+          setUserCommuteTime(dailyRoutine.commuteTime);
+        }
+        
+        if (dailyRoutine.eveningActivity) {
+          setUserEveningActivity(dailyRoutine.eveningActivity);
+        }
+        
+        if (dailyRoutine.activities && dailyRoutine.activities.length > 0) {
+          // Ensure only one morning activity can be selected
+          // Find the first morning activity in the list (if any)
+          const morningActivityName = dailyRoutine.activities.find(activityName => 
+            allMorningActivities.some(ma => ma.name === activityName)
+          );
+          
+          // Map all activities to have selected=false by default
+          const updatedActivities = allMorningActivities.map(activity => ({
+            ...activity,
+            // Only mark the found morning activity as selected
+            selected: activity.name === morningActivityName
+          }));
+          
+          setMorningActivities(updatedActivities);
+          setSelectedActivities(dailyRoutine.activities);
+        }
+      }
+      
+      console.log("===== PROFILE SCREEN: Data refresh completed =====");
+    } catch (error) {
+      console.error("PROFILE SCREEN - Error refreshing data:", error);
+    }
+  };
+
+  // Function to save changes
+  const saveChanges = async () => {
+    try {
+      console.log("===== PROFILE SCREEN: Saving changes =====");
+      
+      // First, get current data
+      const userData = UserDataManager.getAllUserData();
+      
+      // 1. Update profile data
+      const updatedProfile = {
+        ...userData.profile,
+        age: userAge,
+        gender: userGender,
+        occupation: userOccupation,
+        location: userLocation,
+        name: userName
+      };
+      
+      console.log("PROFILE SCREEN - Saving profile:", JSON.stringify(updatedProfile, null, 2));
+      
+      // 2. Update preferences data
+      const updatedPreferences = {
+        ...userData.preferences,
+        style: stylePreference,
+        healthConcerns: [...healthConcerns],
+        activities: [...preferredActivities],
+        notifications: {
+          commute: commuteAlerts,
+          clothing: clothingSuggestions,
+          health: healthTips,
+          events: eventReminders
+        },
+        units: {
+          temperature: temperatureUnit
+        },
+        language: languagePreference
+      };
+      
+      // 3. Update daily routine data
+      const selectedActivitiesList = morningActivities
+        .filter(activity => activity.selected)
+        .map(activity => activity.name);
+      
+      const updatedRoutine = {
+        ...userData.dailyRoutine,
+        commuteMethod: userCommuteMethod,
+        commuteTime: {...userCommuteTime},
+        eveningActivity: userEveningActivity,
+        activities: selectedActivitiesList
+      };
+      
+      // First directly update the data objects
+      UserData.setAll(updatedProfile);
+      PreferenceData.setAll(updatedPreferences);
+      DailyRoutineData.setAll(updatedRoutine);
+      
+      // Then save to AsyncStorage
+      await UserDataManager.saveAllData();
+      
+      console.log("PROFILE SCREEN - All changes saved successfully");
+      
+      // Verify data was saved to AsyncStorage
+      const profileJson = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
+      if (profileJson) {
+        console.log("PROFILE SCREEN - Profile saved to AsyncStorage:", profileJson);
+      } else {
+        console.warn("PROFILE SCREEN - No profile data found in AsyncStorage after save!");
+      }
+      
+      // Reload data to ensure UI is in sync
+      await refreshData();
+      
+      // Show success message
+      Alert.alert(
+        "Success", 
+        "Your profile has been updated successfully!",
+        [{ text: "OK" }]
+      );
+    } catch (error) {
+      console.error("PROFILE SCREEN - Error saving changes:", error);
+      
+      // Show error message
+      Alert.alert(
+        "Error", 
+        "There was a problem saving your changes. Please try again.",
+        [{ text: "OK" }]
+      );
+    }
+  };
+
+  // Load user data when the component mounts
   useEffect(() => {
-    loadUserData();
+    console.log("PROFILE SCREEN - Initial mount, loading data");
+    refreshData();
   }, []);
 
   // Reload data when screen is focused
   useFocusEffect(
     React.useCallback(() => {
-      console.log("Profile screen focused - reloading user data");
-      loadUserData();
-      return () => {};
-    }, [])
+      console.log("===== PROFILE SCREEN: Screen focused - reloading user data =====");
+      
+      // Force a reload when screen comes into focus
+      refreshData();
+      
+      return () => {
+        console.log("PROFILE SCREEN - Screen lost focus");
+      };
+    }, []) // Empty dependency array means this runs on every focus
   );
-
-  const loadUserData = async () => {
-    // First try to load from AsyncStorage
-    await UserDataManager.loadAllData();
-    
-    // Then get the loaded data
-    const userData = UserDataManager.getAllUserData();
-    
-    // Using optional chaining and type assertions for safety
-    if (userData.profile) {
-      const profile = userData.profile as UserDataType;
-      setUserOccupation(profile.occupation || '');
-      setUserName(profile.name || profile.occupation || '');
-      setUserLocation(profile.location || '');
-      setUserAge(profile.age || '');
-      setUserGender(profile.gender || '');
-      
-      console.log("Loaded user profile data:", profile);
-    }
-    
-    if (userData.preferences) {
-      const preferences = userData.preferences as PreferenceDataType;
-      // Load notification preferences with optional chaining
-      setCommuteAlerts(preferences.notifications?.commute || false);
-      setClothingSuggestions(preferences.notifications?.clothing || false);
-      setHealthTips(preferences.notifications?.health || false);
-      setEventReminders(preferences.notifications?.events || false);
-      
-      // Load temperature unit
-      if (preferences.units?.temperature) {
-        setTemperatureUnit(preferences.units.temperature);
-      }
-      
-      // Load language
-      if (preferences.language) {
-        setLanguagePreference(preferences.language);
-      }
-    }
-    
-    if (userData.dailyRoutine) {
-      const dailyRoutine = userData.dailyRoutine as DailyRoutineType;
-      
-      // Set commute data
-      if (dailyRoutine.commuteMethod) {
-        setUserCommuteMethod(dailyRoutine.commuteMethod);
-      }
-      
-      if (dailyRoutine.commuteTime) {
-        setUserCommuteTime(dailyRoutine.commuteTime);
-      }
-      
-      // Set evening activity
-      if (dailyRoutine.eveningActivity) {
-        setUserEveningActivity(dailyRoutine.eveningActivity);
-      }
-      
-      // Update morning activities with selected state
-      if (dailyRoutine.activities && dailyRoutine.activities.length > 0) {
-        // Mark activities as selected
-        const updatedActivities = allMorningActivities.map(activity => ({
-          ...activity,
-          selected: dailyRoutine.activities.includes(activity.name)
-        }));
-        
-        setMorningActivities(updatedActivities);
-        
-        // Use selectedActivities if available, otherwise fall back to activities
-        const activitiesToUse = dailyRoutine.selectedActivities || dailyRoutine.activities;
-        setSelectedActivities(activitiesToUse);
-      }
-      
-      console.log("Loaded daily routine data:", dailyRoutine);
-    }
-  };
 
   // Function to navigate to onboarding screens
   const navigateToOnboarding = () => {
     navigation.navigate('Welcome', { bypassOnboardingCheck: true });
   };
 
-  // Add this function to get appropriate icons for activities
-  const getIconForActivity = (activity: string): string => {
-    switch (activity.toLowerCase()) {
-      case 'sports': return 'basketball';
-      case 'gardening': return 'flower';
-      case 'dog walk': return 'dog';
-      case 'social events': return 'account-group';
-      case 'netflix/movie': return 'movie-open';
-      case 'reading': return 'book-open-variant';
-      case 'running': return 'run';
-      case 'gym': return 'dumbbell';
-      case 'yoga': return 'yoga';
-      case 'bbq': return 'food';
-      case 'hiking': return 'hiking';
-      case 'beach': return 'beach';
-      case 'camping': return 'tent';
-      case 'cycling': return 'bike';
-      default: return 'star';
-    }
+  // Function to get the style name for display
+  const getStyleDisplayName = (styleId: string | null): string => {
+    if (!styleId) return 'Not set';
+    
+    const styleMap: {[key: string]: string} = {
+      'casual': 'Casual',
+      'professional': 'Professional',
+      'sporty': 'Sporty'
+    };
+    
+    return styleMap[styleId] || 'Not set';
+  };
+  
+  // Function to get appropriate icon for activity
+  const getActivityIcon = (activity: string): string => {
+    const activityIcons: {[key: string]: string} = {
+      'BBQ': 'grill',
+      'Hiking': 'hiking',
+      'Outdoor Party': 'party-popper',
+      'Beach': 'beach',
+      'Camping': 'tent',
+      'Sports': 'basketball',
+      'Gardening': 'flower',
+      'Cycling': 'bicycle',
+      'Running': 'run',
+      'Gym': 'dumbbell',
+      'Yoga': 'yoga',
+      'Dog Walk': 'dog',
+      'Social Events': 'account-group',
+      'Netflix/Movie': 'movie-open',
+      'Reading': 'book-open-variant'
+    };
+    
+    return activityIcons[activity] || 'run';
   };
 
   return (
     <>
       <LinearGradient
-        colors={['#E9F2FF', '#FCFDFF']}
+        colors={['#D1DEF0', '#E1EAF5']}
         style={styles.gradientBackground}
         start={{x: 0, y: 0}}
         end={{x: 0, y: 1}}
@@ -219,25 +373,26 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
           <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
             {/* Header with settings */}
             <View style={styles.headerRow}>
-              <View style={styles.transparent} />
-              <TouchableOpacity style={styles.settingsButton}>
-                <Ionicons name="settings-outline" size={adjust(22)} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Profile Section */}
-            <View style={styles.profileSection}>
               <View style={styles.profileImageContainer}>
                 <Text style={styles.avatarInitial}>
                   {userGender ? userGender.charAt(0).toUpperCase() : "U"}
                 </Text>
               </View>
+              <TouchableOpacity 
+                style={styles.editButton}
+                onPress={() => navigation.navigate('Settings')}
+              >
+                <MaterialIcons name="edit" size={adjust(22)} color="#4361EE" />
+              </TouchableOpacity>
+            </View>
+            
+            {/* User name and subtitle */}
+            <View style={styles.nameContainer}>
               <Text style={styles.greeting}>
                 Hi {userName || userOccupation || 'User'} 👋
               </Text>
               <Text style={styles.subtitle}>
-                {userAge ? `Age ${userAge}, ` : ''}{userGender ? `${userGender.charAt(0).toUpperCase() + userGender.slice(1)}, ` : ''}
-                {userLocation ? `From ${userLocation}` : 'Skylar knows your day inside and out'}
+                Skylar knows your day inside out
               </Text>
             </View>
 
@@ -274,83 +429,74 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
             
             {/* Morning Activities */}
             <Text style={styles.subSectionTitle}>Morning Activities</Text>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.activitiesContainer}
-            >
-              {morningActivities.map((activity) => (
-                <View 
-                  key={activity.id} 
-                  style={[
-                    styles.activityBubble,
-                    activity.selected && styles.selectedActivity
-                  ]}
-                >
-                  <MaterialCommunityIcons 
-                    name={activity.icon} 
-                    size={adjust(16)} 
-                    color={activity.selected ? "#fff" : "#666"} 
-                  />
-                  <Text style={[
-                    styles.activityText,
-                    activity.selected && styles.selectedActivityText
-                  ]}>
-                    {activity.name}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-
-            {/* Evening Activities */}
-            <Text style={styles.subSectionTitle}>Evening Activities</Text>
-            <View style={styles.eveningActivitiesContainer}>
-              {selectedActivities.length > 0 ? (
-                selectedActivities.map((activity, index) => (
-                  <View key={index} style={styles.eveningActivityBadge}>
-                    <MaterialCommunityIcons
-                      name={getIconForActivity(activity)}
-                      size={adjust(14)}
-                      color="#fff"
+            <View style={styles.scrollContainer}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.activitiesContainer}
+                snapToAlignment="start"
+                decelerationRate="fast"
+              >
+                {/* Display selected activities first */}
+                {morningActivities
+                  .slice()
+                  .sort((a, b) => (a.selected ? -1 : 1))
+                  .map((activity) => (
+                  <View 
+                    key={activity.id} 
+                    style={[
+                      styles.activityBubble,
+                      activity.selected && styles.selectedActivity
+                    ]}
+                  >
+                    <MaterialCommunityIcons 
+                      name={activity.icon} 
+                      size={adjust(16)} 
+                      color={activity.selected ? "#fff" : "#666"} 
                     />
-                    <Text style={styles.eveningActivityText}>{activity}</Text>
+                    <Text style={[
+                      styles.activityText,
+                      activity.selected && styles.selectedActivityText
+                    ]}>
+                      {activity.name}
+                    </Text>
                   </View>
-                ))
-              ) : (
-                <Text style={styles.noActivitiesText}>No evening activities selected</Text>
-              )}
+                ))}
+              </ScrollView>
             </View>
 
             {/* Commute Preferences */}
-            <View style={styles.commuteSection}>
-              <View style={styles.commuteHeader}>
-                <MaterialIcons name="commute" size={adjust(18)} color="#333" />
-                <Text style={styles.commuteTitle}>Commute Preferences</Text>
+            <View style={styles.cleanCardContainer}>
+              <View style={styles.commuteSection}>
+                <View style={styles.commuteHeader}>
+                  <MaterialIcons name="commute" size={adjust(18)} color="#4361EE" />
+                  <Text style={styles.commuteTitle}>Commute Preferences</Text>
+                </View>
+
+                {/* Transport Type */}
+                <TouchableOpacity style={styles.preferencesRow}>
+                  <Text style={styles.preferenceLabel}>Transport Type</Text>
+                  <View style={styles.preferenceValue}>
+                    <Text style={styles.preferenceValueText}>
+                      {userCommuteMethod ? userCommuteMethod.charAt(0).toUpperCase() + userCommuteMethod.slice(1) : 'Not set'}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" />
+                  </View>
+                </TouchableOpacity>
+
+                {/* Departure Time */}
+                <TouchableOpacity style={[styles.preferencesRow, {borderBottomWidth: 0, paddingBottom: 0}]}>
+                  <Text style={styles.preferenceLabel}>Departure Time</Text>
+                  <View style={styles.preferenceValue}>
+                    <Text style={styles.preferenceValueText}>
+                      {userCommuteTime ? 
+                        `${userCommuteTime.hours}:${userCommuteTime.minutes.toString().padStart(2, '0')} ${userCommuteTime.isAM ? 'AM' : 'PM'}` 
+                        : '8:30 AM'}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" />
+                  </View>
+                </TouchableOpacity>
               </View>
-
-              {/* Transport Type */}
-              <TouchableOpacity style={styles.preferencesRow}>
-                <Text style={styles.preferenceLabel}>Transport Type</Text>
-                <View style={styles.preferenceValue}>
-                  <Text style={styles.preferenceValueText}>
-                    {userCommuteMethod ? userCommuteMethod.charAt(0).toUpperCase() + userCommuteMethod.slice(1) : 'Not set'}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" />
-                </View>
-              </TouchableOpacity>
-
-              {/* Departure Time */}
-              <TouchableOpacity style={styles.preferencesRow}>
-                <Text style={styles.preferenceLabel}>Departure Time</Text>
-                <View style={styles.preferenceValue}>
-                  <Text style={styles.preferenceValueText}>
-                    {userCommuteTime ? 
-                      `${userCommuteTime.hours}:${userCommuteTime.minutes.toString().padStart(2, '0')} ${userCommuteTime.isAM ? 'AM' : 'PM'}` 
-                      : '8:30 AM'}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" />
-                </View>
-              </TouchableOpacity>
             </View>
 
             {/* Notification Box */}
@@ -493,7 +639,7 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
                   <MaterialIcons name="checkroom" size={adjust(20)} color="#4361EE" />
                 </View>
                 <Text style={styles.preferenceCardTitle}>Outfit Style</Text>
-                <Text style={styles.preferenceCardValue}>Casual</Text>
+                <Text style={styles.preferenceCardValue}>{getStyleDisplayName(stylePreference)}</Text>
               </TouchableOpacity>
 
               {/* Health Tags */}
@@ -502,7 +648,9 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
                   <MaterialIcons name="favorite-outline" size={adjust(20)} color="#4361EE" />
                 </View>
                 <Text style={styles.preferenceCardTitle}>Health Tags</Text>
-                <Text style={styles.preferenceCardValue}>2 Active</Text>
+                <Text style={styles.preferenceCardValue}>
+                  {healthConcerns.length > 0 ? `${healthConcerns.length} Active` : 'None'}
+                </Text>
               </TouchableOpacity>
 
               {/* App Settings */}
@@ -515,10 +663,85 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
               </TouchableOpacity>
             </View>
 
-            {/* Save Changes Button */}
-            <TouchableOpacity style={styles.saveButton}>
-              <Text style={styles.saveButtonText}>Save Changes</Text>
-            </TouchableOpacity>
+            {/* Your Style & Health */}
+            <Text style={styles.sectionTitle}>Your Style & Health</Text>
+            
+            <View style={styles.cleanCardContainer}>
+              {/* Style Preference */}
+              <View style={styles.preferencesRow}>
+                <Text style={styles.preferenceLabel}>Clothing Style</Text>
+                <View style={styles.preferenceValue}>
+                  <Text style={styles.preferenceValueText}>
+                    {getStyleDisplayName(stylePreference)}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" />
+                </View>
+              </View>
+              
+              {/* Health Concerns */}
+              <Text style={styles.subSectionTitle}>Health Concerns</Text>
+              <View style={styles.scrollContainer}>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.activitiesContainer}
+                  snapToAlignment="start"
+                  decelerationRate="fast"
+                >
+                  {healthConcerns && healthConcerns.length > 0 ? (
+                    healthConcerns.map((concern, index) => (
+                      <View 
+                        key={index} 
+                        style={[styles.activityBubble, styles.selectedActivity]}
+                      >
+                        <MaterialCommunityIcons 
+                          name="medical-bag" 
+                          size={adjust(16)} 
+                          color="#fff" 
+                        />
+                        <Text style={[styles.activityText, styles.selectedActivityText]}>
+                          {concern}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.noItemsText}>No health concerns set</Text>
+                  )}
+                </ScrollView>
+              </View>
+              
+              {/* Preferred Activities */}
+              <Text style={styles.subSectionTitle}>Preferred Activities</Text>
+              <View style={styles.scrollContainer}>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.activitiesContainer}
+                  snapToAlignment="start"
+                  decelerationRate="fast"
+                >
+                  {preferredActivities && preferredActivities.length > 0 ? (
+                    preferredActivities.map((activity, index) => (
+                      <View 
+                        key={index} 
+                        style={[styles.activityBubble, styles.selectedActivity]}
+                      >
+                        <MaterialCommunityIcons 
+                          name={getActivityIcon(activity)}
+                          size={adjust(16)} 
+                          color="#fff" 
+                        />
+                        <Text style={[styles.activityText, styles.selectedActivityText]}>
+                          {activity}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.noItemsText}>No preferred activities set</Text>
+                  )}
+                </ScrollView>
+              </View>
+            </View>
 
             {/* Reset Preferences */}
             <TouchableOpacity style={styles.resetContainer}>
@@ -561,23 +784,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: adjust(10),
-  },
-  transparent: {
-    width: adjust(24),
-    height: adjust(24),
-  },
-  settingsButton: {
-    width: adjust(40),
-    height: adjust(40),
-    borderRadius: adjust(20),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileSection: {
-    alignItems: 'flex-start',
-    marginTop: adjust(5),
-    marginBottom: adjust(24),
+    paddingVertical: adjust(15),
+    marginBottom: adjust(8),
   },
   profileImageContainer: {
     width: adjust(60),
@@ -586,7 +794,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#4361EE',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: adjust(10),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -598,15 +805,29 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
+  nameContainer: {
+    alignItems: 'flex-start',
+    marginBottom: adjust(16),
+    paddingLeft: adjust(5),
+  },
   greeting: {
-    fontSize: adjust(24),
+    fontSize: adjust(22),
     fontWeight: '600',
     color: '#333',
-    marginBottom: adjust(4),
+    marginBottom: adjust(6),
   },
   subtitle: {
     fontSize: adjust(14),
     color: '#666',
+    marginBottom: adjust(4),
+  },
+  editButton: {
+    width: adjust(40),
+    height: adjust(40),
+    borderRadius: adjust(20),
+    backgroundColor: 'rgba(67, 97, 238, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sectionTitle: {
     fontSize: adjust(16),
@@ -619,10 +840,16 @@ const styles = StyleSheet.create({
     fontSize: adjust(14),
     color: '#666',
     marginBottom: adjust(8),
+    marginTop: adjust(8),
+  },
+  scrollContainer: {
+    marginHorizontal: -adjust(20),
+    marginBottom: adjust(12),
   },
   activitiesContainer: {
     paddingVertical: adjust(4),
-    marginBottom: adjust(16),
+    paddingHorizontal: adjust(20),
+    flexDirection: 'row',
   },
   activityBubble: {
     flexDirection: 'row',
@@ -645,18 +872,45 @@ const styles = StyleSheet.create({
   selectedActivityText: {
     color: '#fff',
   },
+  cardContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: adjust(12),
+    padding: adjust(16),
+    marginBottom: adjust(20),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
+    elevation: 1,
+    overflow: 'hidden',
+    borderWidth: 0,
+  },
+  cleanCardContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: adjust(12),
+    padding: adjust(16),
+    marginBottom: adjust(20),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
+    elevation: 1,
+    overflow: 'hidden',
+    borderWidth: 0,
+  },
   commuteSection: {
-    marginBottom: adjust(16),
+    marginBottom: adjust(0),
   },
   commuteHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: adjust(8),
+    marginBottom: adjust(12),
   },
   commuteTitle: {
     fontSize: adjust(14),
-    color: '#666',
-    marginLeft: adjust(6),
+    fontWeight: '500',
+    color: '#333',
+    marginLeft: adjust(8),
   },
   preferencesRow: {
     flexDirection: 'row',
@@ -680,7 +934,7 @@ const styles = StyleSheet.create({
     marginRight: adjust(4),
   },
   notificationBox: {
-    backgroundColor: 'rgba(232, 240, 255, 0.7)',
+    backgroundColor: 'rgba(67, 97, 238, 0.08)',
     borderRadius: adjust(10),
     padding: adjust(16),
     marginBottom: adjust(20),
@@ -722,6 +976,75 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: adjust(14),
     fontWeight: '600',
+  },
+  resetContainer: {
+    alignItems: 'center',
+    marginBottom: adjust(24),
+  },
+  resetText: {
+    color: '#FF3B30',
+    fontSize: adjust(14),
+    fontWeight: '500',
+  },
+  homeIndicator: {
+    alignItems: 'center',
+    paddingBottom: adjust(8),
+  },
+  homeIndicatorBar: {
+    width: adjust(35),
+    height: adjust(5),
+    backgroundColor: '#D1D1D6',
+    borderRadius: adjust(2.5),
+  },
+  devButton: {
+    marginBottom: adjust(20),
+    backgroundColor: '#333',
+    borderRadius: adjust(8),
+    padding: adjust(12),
+    alignSelf: 'center',
+    paddingHorizontal: adjust(20),
+  },
+  devButtonText: {
+    color: '#fff',
+    fontSize: adjust(14),
+    fontWeight: '500',
+  },
+  userInfoContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: adjust(16),
+  },
+  infoCard: {
+    width: '48%',
+    backgroundColor: '#ffffff',
+    borderRadius: adjust(10),
+    padding: adjust(12),
+    marginBottom: adjust(10),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
+    elevation: 1,
+    overflow: 'hidden',
+    borderWidth: 0,
+  },
+  infoLabel: {
+    fontSize: adjust(12),
+    color: '#666',
+    marginBottom: adjust(4),
+  },
+  infoValue: {
+    fontSize: adjust(14),
+    fontWeight: '500',
+    color: '#333',
+  },
+  noItemsText: {
+    fontSize: adjust(12),
+    color: '#999',
+    fontStyle: 'italic',
+    paddingVertical: adjust(8),
+    paddingHorizontal: adjust(4),
   },
   historyContainer: {
     marginTop: adjust(8),
@@ -809,11 +1132,18 @@ const styles = StyleSheet.create({
   },
   preferenceCard: {
     width: '48%',
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    backgroundColor: '#ffffff',
     borderRadius: adjust(10),
     padding: adjust(16),
     marginBottom: adjust(12),
     minHeight: adjust(110),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
+    elevation: 1,
+    overflow: 'hidden',
+    borderWidth: 0,
   },
   preferenceIconContainer: {
     width: adjust(36),
@@ -833,104 +1163,6 @@ const styles = StyleSheet.create({
     fontSize: adjust(15),
     fontWeight: '500',
     color: '#333',
-  },
-  saveButton: {
-    backgroundColor: '#4361EE',
-    borderRadius: adjust(10),
-    paddingVertical: adjust(14),
-    alignItems: 'center',
-    marginBottom: adjust(14),
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: adjust(15),
-    fontWeight: '600',
-  },
-  resetContainer: {
-    alignItems: 'center',
-    marginBottom: adjust(24),
-  },
-  resetText: {
-    color: '#FF3B30',
-    fontSize: adjust(14),
-    fontWeight: '500',
-  },
-  homeIndicator: {
-    alignItems: 'center',
-    paddingBottom: adjust(8),
-  },
-  homeIndicatorBar: {
-    width: adjust(35),
-    height: adjust(5),
-    backgroundColor: '#D1D1D6',
-    borderRadius: adjust(2.5),
-  },
-  devButton: {
-    marginBottom: adjust(20),
-    backgroundColor: '#333',
-    borderRadius: adjust(8),
-    padding: adjust(12),
-    alignSelf: 'center',
-    paddingHorizontal: adjust(20),
-  },
-  devButtonText: {
-    color: '#fff',
-    fontSize: adjust(14),
-    fontWeight: '500',
-  },
-  userInfoContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: adjust(16),
-  },
-  infoCard: {
-    width: '48%',
-    backgroundColor: '#ffffff',
-    borderRadius: adjust(10),
-    padding: adjust(12),
-    marginBottom: adjust(10),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  infoLabel: {
-    fontSize: adjust(12),
-    color: '#666',
-    marginBottom: adjust(4),
-  },
-  infoValue: {
-    fontSize: adjust(14),
-    fontWeight: '500',
-    color: '#333',
-  },
-  eveningActivitiesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: adjust(16),
-  },
-  eveningActivityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#517FE0',
-    borderRadius: adjust(16),
-    paddingVertical: adjust(6),
-    paddingHorizontal: adjust(12),
-    marginRight: adjust(8),
-    marginBottom: adjust(8),
-  },
-  eveningActivityText: {
-    fontSize: adjust(12),
-    fontWeight: '500',
-    color: '#fff',
-    marginLeft: adjust(4),
-  },
-  noActivitiesText: {
-    fontSize: adjust(12),
-    fontStyle: 'italic',
-    color: '#666',
   },
 });
 

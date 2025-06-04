@@ -7,7 +7,9 @@ import {
   StatusBar, 
   ScrollView,
   Platform,
-  FlatList
+  FlatList,
+  Alert,
+  Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -57,7 +59,6 @@ interface DailyRoutineType {
   };
   eveningActivity: string | null;
   selectedActivity: string | null;
-  selectedActivities: string[];
   activities: string[];
 }
 
@@ -71,7 +72,6 @@ export const DailyRoutineData = {
   },
   eveningActivity: null as string | null,
   selectedActivity: null as string | null,
-  selectedActivities: [] as string[],
   activities: [] as string[],
   getAll: function(): DailyRoutineType {
     return {
@@ -80,7 +80,6 @@ export const DailyRoutineData = {
       commuteTime: this.commuteTime,
       eveningActivity: this.eveningActivity,
       selectedActivity: this.selectedActivity,
-      selectedActivities: this.selectedActivities,
       activities: this.activities,
     };
   },
@@ -92,25 +91,57 @@ export const DailyRoutineData = {
     }
     this.eveningActivity = data.eveningActivity ?? this.eveningActivity;
     this.selectedActivity = data.selectedActivity ?? this.selectedActivity;
-    this.selectedActivities = data.selectedActivities ?? this.selectedActivities;
     this.activities = data.activities ?? this.activities;
   },
 };
 
+// Create a mapping of activity IDs to display names
+const activityMapping = {
+  // Evening activities
+  'sports': 'Sports',
+  'gardening': 'Gardening', 
+  'dogwalk': 'Dog Walk',
+  'social': 'Social Events',
+  'movie': 'Netflix/Movie',
+  'reading': 'Reading',
+  
+  // Morning activities
+  'running': 'Running',
+  'gym': 'Gym',
+  'yoga': 'Yoga',
+  'dogwalk_morning': 'Dog Walk (Morning)'
+};
+
+// Create a reverse mapping from display names to IDs
+const reverseActivityMapping: {[key: string]: string} = {};
+Object.keys(activityMapping).forEach(key => {
+  const displayName = activityMapping[key as keyof typeof activityMapping];
+  reverseActivityMapping[displayName] = key;
+});
+
+// Morning activity mapping
+const morningActivityMapping = {
+  'running': 'Running',
+  'gym': 'Gym',
+  'yoga': 'Yoga',
+  'dogwalk_morning': 'Dog Walk'
+};
+
 const DailyRoutine = ({ navigation }: { navigation: any }) => {
   // State for daily routine options
-  const [morningActivity, setMorningActivity] = useState<string | null>('');
   const [commuteMethod, setCommuteMethod] = useState<string | null>('Car');
   const [commuteHours, setCommuteHours] = useState<number>(8);
   const [commuteMinutes, setCommuteMinutes] = useState<number>(0);
   const [isAM, setIsAM] = useState<boolean>(true);
-  const [eveningActivity, setEveningActivity] = useState<string | null>(null);
   
   const [contentHeight, setContentHeight] = useState(0);
   const contentRef = useRef(null);
   const commuteSliderRef = useRef<FlatList>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const [selectedActivities, setSelectedActivities] = useState<string[]>([]);
+  // Add state for custom alert modal
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
 
   useEffect(() => {
     // Hide header on mount
@@ -133,63 +164,57 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
     navigation.goBack('UserInfo');
   };
 
-  // Update the collectAllActivities function to properly collect selected activities
   const collectAllActivities = (): string[] => {
     const allActivities: string[] = [];
     
-    // Add morning activity if selected
-    if (morningActivity) {
-      allActivities.push(morningActivity);
-    }
-    
-    // Add evening activity if selected
-    if (eveningActivity) {
-      allActivities.push(eveningActivity);
-    }
-    
-    // Add selected outdoor activities with their labels
-    selectedActivities.forEach(id => {
-      // Find the activity option by ID to get the label
-      const activityOption = activityOptions.find(option => option.id === id);
-      if (activityOption) {
-        allActivities.push(activityOption.label);
+    // Add all selected activities with proper display names
+    selectedActivities.forEach(activityId => {
+      // Use the mapping to get display names
+      const displayName = activityMapping[activityId as keyof typeof activityMapping];
+      if (displayName) {
+        allActivities.push(displayName);
       }
     });
     
     return [...new Set(allActivities)]; // Remove duplicates
   };
 
-  // Update the handleNext function to properly save selected activities
   const handleNext = async () => {
     // Collect all activities
     const allActivities = collectAllActivities();
     
-    // Get activity labels for selected activities
-    const selectedActivityLabels = selectedActivities.map(id => {
-      const activity = activityOptions.find(a => a.id === id);
-      return activity ? activity.label : id;
-    });
+    // Find the selected morning activity
+    const selectedMorningActivity = selectedActivities.find(id => 
+      ['running', 'gym', 'yoga', 'dogwalk_morning'].includes(id)
+    );
+    
+    // Find selected evening activities
+    const selectedEveningActivities = selectedActivities.filter(id => 
+      ['sports', 'gardening', 'dogwalk', 'social', 'movie', 'reading'].includes(id)
+    );
+    
+    // Get activity names for display
+    const morningActivityName = selectedMorningActivity 
+      ? activityMapping[selectedMorningActivity as keyof typeof activityMapping] 
+      : null;
+      
+    const eveningActivityName = selectedEveningActivities.length > 0
+      ? activityMapping[selectedEveningActivities[0] as keyof typeof activityMapping]
+      : null;
     
     // Save data to DailyRoutineData global object
     DailyRoutineData.setAll({
-      morningActivity,
+      morningActivity: morningActivityName,
       commuteMethod,
       commuteTime: {
         hours: commuteHours,
         minutes: commuteMinutes,
         isAM
       },
-      eveningActivity,
-      // Use first activity for backwards compatibility
-      selectedActivity: selectedActivityLabels.length > 0 ? selectedActivityLabels[0] : null,
-      // Save all selected activity labels
-      selectedActivities: selectedActivityLabels,
+      eveningActivity: eveningActivityName,
+      selectedActivity: morningActivityName || eveningActivityName,
       activities: allActivities,
     });
-    
-    // Log what's being saved
-    console.log('Saving selected activities:', selectedActivityLabels);
-    console.log('Saving all activities:', allActivities);
     
     // Save to AsyncStorage
     try {
@@ -203,7 +228,7 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
     navigation.navigate('PreferenceScreen');
   };
 
-  // Update the useEffect to properly load saved data
+  // Add useEffect to load saved data
   useEffect(() => {
     // Load saved data when component mounts
     const loadSavedData = async () => {
@@ -212,24 +237,27 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
         const savedData = UserDataManager.getDailyRoutine();
         
         // Set state from saved data
-        if (savedData.morningActivity) setMorningActivity(savedData.morningActivity);
         if (savedData.commuteMethod) setCommuteMethod(savedData.commuteMethod);
         if (savedData.commuteTime) {
           setCommuteHours(savedData.commuteTime.hours);
           setCommuteMinutes(savedData.commuteTime.minutes);
           setIsAM(savedData.commuteTime.isAM);
         }
-        if (savedData.eveningActivity) setEveningActivity(savedData.eveningActivity);
         
-        // Convert activity labels back to IDs
-        if (savedData.selectedActivities && savedData.selectedActivities.length > 0) {
-          const activityIds = savedData.selectedActivities.map(label => {
-            // Find the ID for this label
-            const activity = activityOptions.find(a => a.label === label);
-            return activity ? activity.id : '';
-          }).filter(id => id !== ''); // Filter out any missing IDs
+        // For activities, map from saved display names to activity IDs
+        if (savedData.activities && savedData.activities.length > 0) {
+          const activityIds: string[] = [];
           
-          setSelectedActivities(activityIds);
+          savedData.activities.forEach(activityName => {
+            // If it's in our reverse mapping, add the ID
+            const activityId = reverseActivityMapping[activityName];
+            if (activityId) {
+              activityIds.push(activityId);
+            }
+          });
+          
+          // Set the selected activities (max 2)
+          setSelectedActivities(activityIds.slice(0, 2));
         }
         
         console.log('Loaded daily routine data:', savedData);
@@ -249,22 +277,8 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
   const needsScrollView = contentHeight > SCREEN_HEIGHT;
 
   // Selection handlers
-  const selectMorningActivity = (activity: string) => {
-    setMorningActivity(activity);
-  };
-
   const selectCommuteMethod = (method: string) => {
     setCommuteMethod(method);
-  };
-
-  const selectEveningActivity = (activity: string) => {
-    if (eveningActivity === activity) {
-      // If clicking the same activity again, deselect it
-      setEveningActivity(null);
-    } else {
-      // Otherwise, select the new activity
-      setEveningActivity(activity);
-    }
   };
 
   // Time adjustment handlers
@@ -290,16 +304,37 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
 
   const toggleActivity = (activityId: string) => {
     setSelectedActivities(prev => {
-      // If already selected, remove it
+      // Check if this is a morning activity
+      const isMorningActivity = ['running', 'gym', 'yoga', 'dogwalk_morning'].includes(activityId);
+      
+      // If the activity is already selected, remove it
       if (prev.includes(activityId)) {
         return prev.filter(id => id !== activityId);
       } else {
-        // If not selected yet
-        // Allow up to 2 selections - if already have 2, remove the oldest one
-        if (prev.length >= 2) {
-          return [...prev.slice(1), activityId]; // Remove oldest, add new
+        // For morning activities, ensure only one can be selected
+        if (isMorningActivity) {
+          // Remove any previously selected morning activity
+          const withoutMorningActivities = prev.filter(id => 
+            !['running', 'gym', 'yoga', 'dogwalk_morning'].includes(id)
+          );
+          // Add the new morning activity
+          return [...withoutMorningActivities, activityId];
         } else {
-          return [...prev, activityId]; // Add new to existing array
+          // For evening activities, keep the existing behavior (max 2)
+          // Count how many evening activities are already selected
+          const selectedEveningActivities = prev.filter(id => 
+            ['sports', 'gardening', 'dogwalk', 'social', 'movie', 'reading'].includes(id)
+          );
+          
+          if (selectedEveningActivities.length < 2) {
+            return [...prev, activityId];
+          } else {
+            // Show custom alert instead of using Alert.alert
+            setAlertMessage("You can only select up to 2 evening activities. Please deselect one first.");
+            setAlertVisible(true);
+            // Return the current selections unchanged
+            return prev;
+          }
         }
       }
     });
@@ -347,23 +382,21 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
         IconComponent = Ionicons;
     }
 
-    const isSelected = selectedActivities.includes(item.id);
-
     return (
       <TouchableOpacity 
-        style={[styles.pillButton, isSelected && styles.selectedPillButton]} 
+        style={[styles.pillButton, selectedActivities.includes(item.id) && styles.selectedPillButton]} 
         onPress={() => toggleActivity(item.id)}
       >
         <IconComponent 
           name={item.icon} 
           size={adjust(14)} 
-          color={isSelected ? "#fff" : "#333"} 
+          color={selectedActivities.includes(item.id) ? "#fff" : "#333"} 
           style={styles.pillIcon}
         />
         <Text 
           style={[
             styles.pillText, 
-            isSelected && styles.selectedPillText
+            selectedActivities.includes(item.id) && styles.selectedPillText
           ]}
         >
           {item.label}
@@ -396,37 +429,53 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
             <Text style={styles.questionText}>What do you usually do in the mornings?</Text>
             <View style={styles.optionsContainer}>
               <TouchableOpacity 
-                style={[styles.optionButton, morningActivity === 'Running' && styles.selectedOption]} 
-                onPress={() => selectMorningActivity('Running')}
+                style={[styles.optionButton, selectedActivities.includes('running') && styles.selectedOption]} 
+                onPress={() => toggleActivity('running')}
               >
-                <Ionicons name="fitness" size={adjust(15)} color={morningActivity === 'Running' ? "#fff" : "#333"} />
-                <Text style={[styles.optionText, morningActivity === 'Running' && styles.selectedOptionText]}>Running</Text>
+                <Ionicons 
+                  name="fitness" 
+                  size={adjust(15)} 
+                  color={selectedActivities.includes('running') ? "#fff" : "#333"} 
+                />
+                <Text style={[styles.optionText, selectedActivities.includes('running') && styles.selectedOptionText]}>Running</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.optionButton, morningActivity === 'Gym' && styles.selectedOption]} 
-                onPress={() => selectMorningActivity('Gym')}
+                style={[styles.optionButton, selectedActivities.includes('gym') && styles.selectedOption]} 
+                onPress={() => toggleActivity('gym')}
               >
-                <MaterialCommunityIcons name="dumbbell" size={adjust(15)} color={morningActivity === 'Gym' ? "#fff" : "#333"} />
-                <Text style={[styles.optionText, morningActivity === 'Gym' && styles.selectedOptionText]}>Gym</Text>
+                <MaterialCommunityIcons 
+                  name="dumbbell" 
+                  size={adjust(15)} 
+                  color={selectedActivities.includes('gym') ? "#fff" : "#333"} 
+                />
+                <Text style={[styles.optionText, selectedActivities.includes('gym') && styles.selectedOptionText]}>Gym</Text>
               </TouchableOpacity>
             </View>
             
             <View style={styles.optionsContainer}>
               <TouchableOpacity 
-                style={[styles.optionButton, morningActivity === 'Yoga' && styles.selectedOption]} 
-                onPress={() => selectMorningActivity('Yoga')}
+                style={[styles.optionButton, selectedActivities.includes('yoga') && styles.selectedOption]} 
+                onPress={() => toggleActivity('yoga')}
               >
-                <MaterialCommunityIcons name="yoga" size={adjust(15)} color={morningActivity === 'Yoga' ? "#fff" : "#333"} />
-                <Text style={[styles.optionText, morningActivity === 'Yoga' && styles.selectedOptionText]}>Yoga</Text>
+                <MaterialCommunityIcons 
+                  name="yoga" 
+                  size={adjust(15)} 
+                  color={selectedActivities.includes('yoga') ? "#fff" : "#333"} 
+                />
+                <Text style={[styles.optionText, selectedActivities.includes('yoga') && styles.selectedOptionText]}>Yoga</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.optionButton, morningActivity === 'Dog Walk' && styles.selectedOption]} 
-                onPress={() => selectMorningActivity('Dog Walk')}
+                style={[styles.optionButton, selectedActivities.includes('dogwalk_morning') && styles.selectedOption]} 
+                onPress={() => toggleActivity('dogwalk_morning')}
               >
-                <MaterialCommunityIcons name="dog" size={adjust(15)} color={morningActivity === 'Dog Walk' ? "#fff" : "#333"} />
-                <Text style={[styles.optionText, morningActivity === 'Dog Walk' && styles.selectedOptionText]}>Dog Walk</Text>
+                <MaterialCommunityIcons 
+                  name="dog" 
+                  size={adjust(15)} 
+                  color={selectedActivities.includes('dogwalk_morning') ? "#fff" : "#333"} 
+                />
+                <Text style={[styles.optionText, selectedActivities.includes('dogwalk_morning') && styles.selectedOptionText]}>Dog Walk</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -515,57 +564,89 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
           {/* Evening Activities */}
           <View style={[styles.questionContainer, styles.sectionContainer]}>
             <Text style={styles.questionText}>What do you enjoy in the evenings?</Text>
+            <View style={styles.selectionCounterContainer}>
+              <Text style={[
+                styles.counterText,
+                selectedActivities.length === 2 ? styles.counterTextFull : null
+              ]}>
+                {selectedActivities.length}/2 selected
+              </Text>
+            </View>
             <View style={styles.optionsContainer}>
               <TouchableOpacity 
-                style={[styles.optionButton, eveningActivity === 'Sports' && styles.selectedOption]} 
-                onPress={() => selectEveningActivity('Sports')}
+                style={[styles.optionButton, selectedActivities.includes('sports') && styles.selectedOption]} 
+                onPress={() => toggleActivity('sports')}
               >
-                <MaterialCommunityIcons name="basketball" size={adjust(15)} color={eveningActivity === 'Sports' ? "#fff" : "#333"} />
-                <Text style={[styles.optionText, eveningActivity === 'Sports' && styles.selectedOptionText]}>Sports</Text>
+                <MaterialCommunityIcons 
+                  name="basketball" 
+                  size={adjust(15)} 
+                  color={selectedActivities.includes('sports') ? "#fff" : "#333"} 
+                />
+                <Text style={[styles.optionText, selectedActivities.includes('sports') && styles.selectedOptionText]}>Sports</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.optionButton, eveningActivity === 'Gardening' && styles.selectedOption]} 
-                onPress={() => selectEveningActivity('Gardening')}
+                style={[styles.optionButton, selectedActivities.includes('gardening') && styles.selectedOption]} 
+                onPress={() => toggleActivity('gardening')}
               >
-                <MaterialCommunityIcons name="flower" size={adjust(15)} color={eveningActivity === 'Gardening' ? "#fff" : "#333"} />
-                <Text style={[styles.optionText, eveningActivity === 'Gardening' && styles.selectedOptionText]}>Gardening</Text>
+                <MaterialCommunityIcons 
+                  name="flower" 
+                  size={adjust(15)} 
+                  color={selectedActivities.includes('gardening') ? "#fff" : "#333"} 
+                />
+                <Text style={[styles.optionText, selectedActivities.includes('gardening') && styles.selectedOptionText]}>Gardening</Text>
               </TouchableOpacity>
             </View>
             
             <View style={styles.optionsContainer}>
               <TouchableOpacity 
-                style={[styles.optionButton, eveningActivity === 'Dog Walk' && styles.selectedOption]} 
-                onPress={() => selectEveningActivity('Dog Walk')}
+                style={[styles.optionButton, selectedActivities.includes('dogwalk') && styles.selectedOption]} 
+                onPress={() => toggleActivity('dogwalk')}
               >
-                <MaterialCommunityIcons name="dog" size={adjust(15)} color={eveningActivity === 'Dog Walk' ? "#fff" : "#333"} />
-                <Text style={[styles.optionText, eveningActivity === 'Dog Walk' && styles.selectedOptionText]}>Dog Walk</Text>
+                <MaterialCommunityIcons 
+                  name="dog" 
+                  size={adjust(15)} 
+                  color={selectedActivities.includes('dogwalk') ? "#fff" : "#333"} 
+                />
+                <Text style={[styles.optionText, selectedActivities.includes('dogwalk') && styles.selectedOptionText]}>Dog Walk</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.optionButton, eveningActivity === 'Social Events' && styles.selectedOption]} 
-                onPress={() => selectEveningActivity('Social Events')}
+                style={[styles.optionButton, selectedActivities.includes('social') && styles.selectedOption]} 
+                onPress={() => toggleActivity('social')}
               >
-                <MaterialCommunityIcons name="account-group" size={adjust(15)} color={eveningActivity === 'Social Events' ? "#fff" : "#333"} />
-                <Text style={[styles.optionText, eveningActivity === 'Social Events' && styles.selectedOptionText]}>Social Events</Text>
+                <MaterialCommunityIcons 
+                  name="account-group" 
+                  size={adjust(15)} 
+                  color={selectedActivities.includes('social') ? "#fff" : "#333"} 
+                />
+                <Text style={[styles.optionText, selectedActivities.includes('social') && styles.selectedOptionText]}>Social Events</Text>
               </TouchableOpacity>
             </View>
             
             <View style={styles.optionsContainer}>
               <TouchableOpacity 
-                style={[styles.optionButton, eveningActivity === 'Netflix/Movie' && styles.selectedOption]} 
-                onPress={() => selectEveningActivity('Netflix/Movie')}
+                style={[styles.optionButton, selectedActivities.includes('movie') && styles.selectedOption]} 
+                onPress={() => toggleActivity('movie')}
               >
-                <MaterialCommunityIcons name="movie-open" size={adjust(15)} color={eveningActivity === 'Netflix/Movie' ? "#fff" : "#333"} />
-                <Text style={[styles.optionText, eveningActivity === 'Netflix/Movie' && styles.selectedOptionText]}>Netflix/Movie</Text>
+                <MaterialCommunityIcons 
+                  name="movie-open" 
+                  size={adjust(15)} 
+                  color={selectedActivities.includes('movie') ? "#fff" : "#333"} 
+                />
+                <Text style={[styles.optionText, selectedActivities.includes('movie') && styles.selectedOptionText]}>Netflix/Movie</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.optionButton, eveningActivity === 'Reading' && styles.selectedOption]} 
-                onPress={() => selectEveningActivity('Reading')}
+                style={[styles.optionButton, selectedActivities.includes('reading') && styles.selectedOption]} 
+                onPress={() => toggleActivity('reading')}
               >
-                <MaterialCommunityIcons name="book-open-variant" size={adjust(15)} color={eveningActivity === 'Reading' ? "#fff" : "#333"} />
-                <Text style={[styles.optionText, eveningActivity === 'Reading' && styles.selectedOptionText]}>Reading</Text>
+                <MaterialCommunityIcons 
+                  name="book-open-variant" 
+                  size={adjust(15)} 
+                  color={selectedActivities.includes('reading') ? "#fff" : "#333"} 
+                />
+                <Text style={[styles.optionText, selectedActivities.includes('reading') && styles.selectedOptionText]}>Reading</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -612,6 +693,34 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
       ) : (
         renderContent()
       )}
+
+      {/* Custom Alert Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={alertVisible}
+        onRequestClose={() => setAlertVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setAlertVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <MaterialIcons name="error-outline" size={adjust(24)} color="#517FE0" />
+              <Text style={styles.modalTitle}>Maximum Selection</Text>
+            </View>
+            <Text style={styles.modalMessage}>{alertMessage}</Text>
+            <TouchableOpacity 
+              style={styles.modalButton} 
+              onPress={() => setAlertVisible(false)}
+            >
+              <Text style={styles.modalButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
       </LinearGradient>
     </SafeAreaView>
   );
@@ -901,24 +1010,65 @@ const styles = StyleSheet.create({
   selectedPillText: {
     color: '#fff',
   },
-  helperTextContainer: {
+  selectionCounterContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: adjust(8),
   },
-  helperText: {
+  counterText: {
     fontSize: adjust(11),
-    fontStyle: 'italic',
     color: '#666',
-  },
-  selectionCountText: {
-    fontSize: adjust(11),
     fontWeight: '500',
+  },
+  counterTextFull: {
     color: '#517FE0',
   },
-  selectionLimitReached: {
-    color: '#FF9500',
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: adjust(16),
+    padding: adjust(16),
+    width: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: adjust(12),
+  },
+  modalTitle: {
+    fontSize: adjust(16),
+    fontWeight: '600',
+    color: '#333',
+    marginLeft: adjust(8),
+  },
+  modalMessage: {
+    fontSize: adjust(14),
+    color: '#555',
+    marginBottom: adjust(16),
+    lineHeight: adjust(20),
+  },
+  modalButton: {
+    backgroundColor: '#517FE0',
+    borderRadius: adjust(20),
+    paddingVertical: adjust(8),
+    paddingHorizontal: adjust(16),
+    alignSelf: 'flex-end',
+  },
+  modalButtonText: {
+    color: '#ffffff',
+    fontSize: adjust(14),
+    fontWeight: '600',
   },
 });
 

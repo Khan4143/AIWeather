@@ -13,6 +13,7 @@ import { UserDataManager } from '../utils/userDataManager'
 import HomeScreen from '../Screens/HomeScreen'
 import TabNavigator from './TabNavigator'
 import PlanningScreen from '../Screens/PlanningScreen'
+import SettingsScreen from '../Screens/SettingsScreen'
 
 const Navigations = () => {
   const Stack = createNativeStackNavigator()
@@ -67,6 +68,7 @@ const Navigations = () => {
         {/* Individual Screens (for direct navigation) */}
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="PlanningScreen" component={PlanningScreen} />
+        <Stack.Screen name="Settings" component={SettingsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   )

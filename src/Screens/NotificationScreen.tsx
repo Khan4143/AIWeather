@@ -26,11 +26,11 @@ const NotificationScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const handleShowForecast = () => {
-    // Reset navigation and go to Home screen (no going back)
+    // Reset navigation and go to MainApp (with tabs) instead of just Home
     navigation.dispatch(
       CommonActions.reset({
         index: 0,
-        routes: [{ name: 'Home' }],
+        routes: [{ name: 'MainApp' }],
       })
     );
   };

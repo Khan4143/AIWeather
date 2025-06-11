@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -10,9 +10,11 @@ import {
   ScrollView,
   StatusBar,
   Alert,
-  PermissionsAndroid,
   ActivityIndicator,
   Modal,
+  FlatList,
+  PermissionsAndroid,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -22,7 +24,7 @@ import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT } from '../constants/dimesions';
 import { UserDataManager } from '../utils/userDataManager';
 import Geolocation from 'react-native-geolocation-service';
-import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import { validateCity } from '../services/weatherService';
 
 const STANDARD_SPACING = adjust(15);
 
@@ -55,72 +57,228 @@ export const UserData = {
   }
 };
 
-// Add a function to convert coordinates to location name using Nominatim API
-const reverseGeocode = async (latitude: number, longitude: number): Promise<string> => {
-  try {
-    // Using the free Nominatim API (OpenStreetMap)
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`,
-      {
-        headers: {
-          'User-Agent': 'SkylarWeatherApp/1.0',
-          'Accept-Language': 'en'
-        }
-      }
-    );
-    
-    const data = await response.json();
-    console.log('Geocoding response:', data);
-    
-    if (data && data.address) {
-      // Build a location string from the address components
-      const { city, town, village, county, state, country } = data.address;
-      
-      // Try to get the most specific location name available
-      const locationName = city || town || village || county || '';
-      const regionName = state || '';
-      const countryName = country || '';
-      
-      let locationString = '';
-      
-      if (locationName) {
-        locationString = locationName;
-        if (regionName && locationName !== regionName) {
-          locationString += `, ${regionName}`;
-        }
-        if (countryName && regionName !== countryName) {
-          locationString += `, ${countryName}`;
-        }
-      } else if (regionName) {
-        locationString = regionName;
-        if (countryName) {
-          locationString += `, ${countryName}`;
-        }
-      } else if (countryName) {
-        locationString = countryName;
-      }
-      
-      // If we couldn't parse a proper name, use display_name as fallback
-      return locationString || data.display_name || 'Location detected';
-    }
-    
-    throw new Error('No location data found');
-  } catch (error) {
-    console.error('Error in reverse geocoding:', error);
-    return 'Location detected'; // Fallback
-  }
-};
+// List of popular cities available in OpenWeather API
+const POPULAR_CITIES = [
+  'New York, US',
+  'Los Angeles, US',
+  'London, GB',
+  'Tokyo, JP',
+  'Paris, FR',
+  'Berlin, DE',
+  'Sydney, AU',
+  'Mumbai, IN',
+  'Beijing, CN',
+  'Rio de Janeiro, BR',
+  'Cairo, EG',
+  'Moscow, RU',
+  'Toronto, CA',
+  'Rome, IT',
+  'Madrid, ES',
+  'Amsterdam, NL',
+  'Dubai, AE',
+  'Mexico City, MX',
+  'Bangkok, TH',
+  'Singapore, SG',
+  'Stockholm, SE',
+  'Istanbul, TR',
+  'Seoul, KR',
+  'Buenos Aires, AR',
+  'Nairobi, KE',
+  'Vienna, AT',
+  'Athens, GR',
+  'Copenhagen, DK',
+  'Brussels, BE',
+  'Helsinki, FI',
+  'Lisbon, PT',
+  'Zurich, CH',
+  'Oslo, NO',
+  'Warsaw, PL',
+  'Prague, CZ',
+  'Budapest, HU',
+  'Auckland, NZ',
+  'Jakarta, ID',
+  'Manila, PH',
+  'Kuala Lumpur, MY',
+  'Santiago, CL',
+  'Bogota, CO',
+  'Lima, PE',
+  'Johannesburg, ZA',
+  'Cape Town, ZA',
+];
+
+const API_KEY = '87b449b894656bb5d85c61981ace7d25';
+
+// Add type definition for city objects
+interface CityObject {
+  key: string;
+  display: string;
+}
 
 const UserInfo = ({ navigation }: { navigation: any }) => {
   // State for form fields
   const [age, setAge] = useState('');
   const [gender, setGender] = useState('');
   const [occupation, setOccupation] = useState('');
-  const [useLocation, setUseLocation] = useState(false);
   const [manualLocation, setManualLocation] = useState('');
-  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [citySuggestions, setCitySuggestions] = useState<CityObject[]>([]);
   const scrollViewRef = useRef<ScrollView>(null);
-  const googlePlacesRef = useRef<any>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Add a ref for the input field
+  const locationInputRef = useRef<TextInput>(null);
+
+  // Fetch city suggestions from OpenWeatherMap API
+  const fetchCitySuggestions = useCallback(async (query: string) => {
+    if (!query || query.length < 2) {
+      setCitySuggestions([]);
+      return;
+    }
+
+    // First check our static list for partial matches
+    const staticMatches: CityObject[] = POPULAR_CITIES.filter(city => 
+      city.toLowerCase().includes(query.toLowerCase())
+    ).map((city, index) => ({
+      key: `static-${city}-${index}`,
+      display: city
+    }));
+    
+    // If we have matches in our static list, show them immediately
+    if (staticMatches.length > 0) {
+      setCitySuggestions(staticMatches);
+      
+      // If we have sufficient local matches, we might not need the API request
+      if (staticMatches.length >= 3) {
+        return;
+      }
+    }
+
+    setIsLoading(true);
+    try {
+      // Use a wildcard approach for the API call by adding an asterisk
+      // This makes the query more lenient for partial matches
+      const searchTerm = query.endsWith('*') ? query : `${query}*`;
+      
+      const response = await fetch(
+        `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(searchTerm)}&limit=15&appid=${API_KEY}`
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch city suggestions');
+      }
+
+      const data = await response.json();
+      
+      // Format results as "City, Country Code" and add index to ensure uniqueness
+      if (data && data.length > 0) {
+        // Create formatted cities array
+        const formattedCities: CityObject[] = data.map((item: any, index: number) => ({
+          key: `${item.name}-${item.country}-${index}`,
+          display: `${item.name}, ${item.country}`
+        }));
+
+        // Filter the results to prioritize exact matches and ensure we get the best results
+        const exactMatches: CityObject[] = formattedCities.filter((city: CityObject) => 
+          city.display.toLowerCase().includes(query.toLowerCase())
+        );
+        
+        // Validate cities against the OpenWeather API to ensure they exist
+        const validatedMatches: CityObject[] = [];
+        const validationPromises = exactMatches.map(async (city: CityObject) => {
+          const isValid = await validateCity(city.display);
+          if (isValid) {
+            validatedMatches.push(city);
+          } else {
+            console.log(`City validation failed for: ${city.display}`);
+          }
+        });
+        
+        // Wait for all validation checks to complete
+        await Promise.all(validationPromises);
+        
+        // Combine with our static matches (which we assume are valid) and deduplicate
+        const allMatches: CityObject[] = [...validatedMatches];
+        
+        // Only add static matches if they don't appear to be duplicates
+        for (const staticCity of staticMatches) {
+          const isDuplicate = allMatches.some((city: CityObject) => 
+            city.display.toLowerCase() === staticCity.display.toLowerCase()
+          );
+          if (!isDuplicate) {
+            // Validate static city to ensure it exists in OpenWeather API
+            const isValid = await validateCity(staticCity.display);
+            if (isValid) {
+              allMatches.push(staticCity);
+            }
+          }
+        }
+        
+        setCitySuggestions(allMatches.slice(0, 10)); // Limit to 10 results
+      } else {
+        // Fall back to our static matches if the API returns nothing
+        // But still validate them
+        const validatedStaticMatches: CityObject[] = [];
+        const validationPromises = staticMatches.map(async (city: CityObject) => {
+          const isValid = await validateCity(city.display);
+          if (isValid) {
+            validatedStaticMatches.push(city);
+          }
+        });
+        
+        await Promise.all(validationPromises);
+        setCitySuggestions(validatedStaticMatches);
+      }
+    } catch (error) {
+      console.error('Error fetching city suggestions:', error);
+      // When an error occurs, still show any static matches we have
+      // But validate them first if possible
+      try {
+        const validatedStaticMatches: CityObject[] = [];
+        const validationPromises = staticMatches.map(async (city: CityObject) => {
+          try {
+            const isValid = await validateCity(city.display);
+            if (isValid) {
+              validatedStaticMatches.push(city);
+            }
+          } catch (err) {
+            // If validation fails, just use the static city anyway
+            validatedStaticMatches.push(city);
+          }
+        });
+        
+        await Promise.all(validationPromises);
+        setCitySuggestions(validatedStaticMatches);
+      } catch (validationError) {
+        // If all else fails, just use the static matches
+        setCitySuggestions(staticMatches);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Handle text input for location with debouncing
+  const handleLocationTextChange = (text: string) => {
+    setManualLocation(text);
+    setSearchQuery(text);
+    
+    // Always show suggestions if there's text, even if short
+    setShowCitySuggestions(text.length > 0);
+    
+    // Debounce API calls to avoid too many requests
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+    }
+    
+    // Shorter timeout for better responsiveness
+    searchTimeout.current = setTimeout(() => {
+      fetchCitySuggestions(text);
+    }, 200); // 200ms debounce time (reduced from 300ms)
+  };
 
   useEffect(() => {
     if (navigation && navigation.setOptions) {
@@ -132,138 +290,132 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
     const unsubscribe = navigation.addListener('focus', () => {
       if (scrollViewRef.current) {
         scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: true });
-        }
-      });
+      }
+    });
 
     return unsubscribe;
   }, [navigation]);
+
+  // Request location permissions (Android)
+  const requestLocationPermission = async () => {
+    if (Platform.OS === 'ios') {
+      return await Geolocation.requestAuthorization('whenInUse');
+    } else {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: "Location Permission",
+            message: "Skylar needs access to your location to provide accurate weather updates.",
+            buttonNeutral: "Ask Me Later",
+            buttonNegative: "Cancel",
+            buttonPositive: "OK"
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn(err);
+        return false;
+      }
+    }
+  };
+
+  // Reverse geocode coordinates to city name
+  const reverseGeocode = async (latitude: number, longitude: number) => {
+    try {
+      // Use OpenWeather's reverse geocoding API
+      const response = await fetch(
+        `https://api.openweathermap.org/geo/1.0/reverse?lat=${latitude}&lon=${longitude}&limit=1&appid=${API_KEY}`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to get location name');
+      }
+      
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        // Format as object with key and display properties
+        return {
+          key: `geo-${data[0].name}-${data[0].country}`,
+          display: `${data[0].name}, ${data[0].country}`
+        };
+      } else {
+        throw new Error('Location not found');
+      }
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      return null;
+    }
+  };
 
   // Handle gender selection
   const handleSelectGender = (selectedGender: string) => {
     setGender(selectedGender);
   };
 
-  // Request location permissions
-  const requestLocationPermission = async () => {
-    try {
-      if (Platform.OS === 'android') {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          {
-            title: 'Location Permission',
-            message: 'This app needs access to your location to provide weather updates.',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
-          }
-        );
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } else {
-        // For iOS, we don't need to explicitly request permission
-        // The requestAuthorization call happens internally in getCurrentPosition
-        return true;
-      }
-    } catch (err) {
-      console.warn(err);
-      return false;
-    }
-  };
-
-  // Get current location
-  const getCurrentLocation = async () => {
-    setIsDetectingLocation(true);
-    
-    // Set a timeout to prevent endless loading
-    const locationTimeout = setTimeout(() => {
-      if (isDetectingLocation) {
-        setIsDetectingLocation(false);
-        Alert.alert(
-          'Location Timeout',
-          'Location detection is taking too long. Please try again or enter your location manually.',
-          [{ text: 'OK' }]
-        );
-      }
-    }, 15000);
+  // Detect current location
+  const handleDetectLocation = async () => {
+    setIsLocating(true);
     
     try {
       const hasPermission = await requestLocationPermission();
       
       if (!hasPermission) {
-        clearTimeout(locationTimeout);
-        setIsDetectingLocation(false);
         Alert.alert(
           'Permission Denied',
-          'Location permission was denied. Please enter your location manually.',
+          'Please enable location permissions in your device settings to use this feature.',
           [{ text: 'OK' }]
         );
+        setIsLocating(false);
         return;
       }
       
-      // For debugging purposes
-      console.log('Getting location...');
-      
-      // Use a Promise-based approach to handle geolocation
-      const position = await new Promise<Geolocation.GeoPosition>((resolve, reject) => {
-        Geolocation.getCurrentPosition(
-          (pos) => resolve(pos),
-          (error) => reject(error),
-          { 
-            enableHighAccuracy: false, // Set to false for faster response
-            timeout: 10000,
-            maximumAge: 1000 
+      Geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          const cityObj = await reverseGeocode(latitude, longitude);
+          
+          if (cityObj) {
+            setManualLocation(cityObj.display);
+            setSearchQuery('');
+            setShowCitySuggestions(false);
+          } else {
+            Alert.alert(
+              'Location Error',
+              'Could not determine your city. Please enter your location manually.',
+              [{ text: 'OK' }]
+            );
           }
-        );
-      });
-      
-      clearTimeout(locationTimeout);
-      console.log('Location obtained:', position);
-      
-      // Get the location name from coordinates
-      const { latitude, longitude } = position.coords;
-      
-      // Show coordinates temporarily while we fetch the location name
-      setManualLocation(`${latitude.toFixed(2)}, ${longitude.toFixed(2)}`);
-      setUseLocation(true);
-      
-      // Convert coordinates to human-readable location name
-      try {
-        const locationName = await reverseGeocode(latitude, longitude);
-        console.log('Location name:', locationName);
-        
-        // Update with the proper location name
-        setManualLocation(locationName);
-      } catch (err) {
-        console.error('Error in reverse geocoding:', err);
-        // Keep the coordinates as fallback
-        setManualLocation(`${latitude.toFixed(2)}, ${longitude.toFixed(2)}`);
-      }
-    } catch (error: any) {
-      clearTimeout(locationTimeout);
-      console.error('Error getting location:', error);
-      
-      let errorMessage = 'Could not get your location. Please enter it manually.';
-      if (error.code === 1) {
-        errorMessage = 'Location permission denied. Please enter your location manually.';
-      } else if (error.code === 2) {
-        errorMessage = 'Location unavailable. Please check your device settings and try again.';
-      } else if (error.code === 3) {
-        errorMessage = 'Location request timed out. Please try again or enter your location manually.';
-      }
-      
+          setIsLocating(false);
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+          Alert.alert(
+            'Location Error',
+            'Unable to get your current location. Please try again or enter your location manually.',
+            [{ text: 'OK' }]
+          );
+          setIsLocating(false);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      );
+    } catch (error) {
+      console.error('Location detection error:', error);
+      setIsLocating(false);
       Alert.alert(
-        'Location Error',
-        errorMessage,
+        'Error',
+        'Something went wrong while getting your location. Please try again.',
         [{ text: 'OK' }]
       );
-    } finally {
-      setIsDetectingLocation(false);
     }
   };
 
-  // Handle location detection button press
-  const handleDetectLocation = () => {
-    console.log("Location detection requested");
-    getCurrentLocation();
+  // Handle city selection
+  const handleCitySelect = (cityObj: {key: string, display: string}) => {
+    setManualLocation(cityObj.display);
+    setSearchQuery('');
+    setShowCitySuggestions(false);
   };
 
   // Handle next button press
@@ -280,7 +432,7 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
     }
     
     // Save data to UserData global object
-    const locationToSave = manualLocation || (useLocation ? 'New York, NY' : '');
+    const locationToSave = manualLocation || 'New York, US';
     UserData.setAll({
       age,
       gender,
@@ -309,13 +461,69 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
     );
   };
 
+  // Render city item for FlatList
+  const renderCityItem = ({ item }: { item: string }) => {
+    // Create a city object compatible with our new format
+    const cityObj = {
+      key: `modal-${item}`,
+      display: item
+    };
+    
+    return (
+      <TouchableOpacity
+        style={styles.cityItem}
+        onPress={() => handleCitySelect(cityObj)}
+      >
+        <Ionicons name="location-outline" size={adjust(16)} color="#4361EE" />
+        <Text style={styles.cityItemText}>{item}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  // Modify the useEffect for keyboard handling
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        // When keyboard shows and suggestions are visible, scroll to ensure they're visible
+        if (showCitySuggestions && scrollViewRef.current) {
+          setTimeout(() => {
+            if (locationInputRef.current) {
+              locationInputRef.current.measureInWindow((x, y, width, height) => {
+                if (scrollViewRef.current) {
+                  scrollViewRef.current.scrollTo({ 
+                    y: y - 120, // Scroll to position input at top with space for suggestions
+                    animated: true 
+                  });
+                }
+              });
+            }
+          }, 100);
+        }
+      }
+    );
+
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, [showCitySuggestions]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
       <LinearGradient colors={['#b3d4ff', '#5c85e6']} style={styles.background}>
       <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoid}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
           enabled
         >
@@ -427,32 +635,35 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
         {/* Location Input */}
         <View style={styles.inputContainer}>
           <Text style={styles.inputLabel}>Where are you located?</Text>
-          
           {/* Button to detect location */}
-          <TouchableOpacity
+          <TouchableOpacity 
             style={styles.locationDetectButton}
             onPress={handleDetectLocation}
-            disabled={isDetectingLocation}
+            disabled={isLocating}
           >
             <Ionicons name="location" size={adjust(16)} color="#fff" />
             <Text style={styles.locationDetectText}>
-              {isDetectingLocation ? 'Detecting...' : 'Detect My Location'}
+              {isLocating ? 'Detecting...' : 'Detect my Location'}
             </Text>
+            {isLocating && (
+              <ActivityIndicator size="small" color="#fff" style={{ marginLeft: 5 }} />
+            )}
           </TouchableOpacity>
-          
+            
           {/* Divider */}
           <View style={styles.dividerContainer}>
             <View style={styles.dividerLine} />
             <Text style={styles.dividerText}>OR</Text>
             <View style={styles.dividerLine} />
           </View>
-          
-          {/* Google Places Autocomplete */}
+            
+          {/* Manual Location Input */}
           <View style={styles.placesInputContainer}>
             <View style={styles.locationIconContainer}>
               <Ionicons name="search" size={adjust(16)} color="#666" />
             </View>
             <TextInput
+              ref={locationInputRef}
               style={{
                 height: adjust(42),
                 paddingHorizontal: adjust(12),
@@ -463,14 +674,74 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
                 borderRadius: adjust(8),
                 borderColor: '#e0e0e0',
                 borderWidth: 1,
+                zIndex: 1,
               }}
               placeholder="Enter your city or area"
               placeholderTextColor="#8e9aaf"
               value={manualLocation}
-              onChangeText={(text) => setManualLocation(text)}
+              onChangeText={handleLocationTextChange}
+              onFocus={() => {
+                setShowCitySuggestions(manualLocation.length > 0);
+                // Scroll to make room for suggestions when focused
+                if (scrollViewRef.current && locationInputRef.current) {
+                  setTimeout(() => {
+                    locationInputRef.current?.measureInWindow((x, y, width, height) => {
+                      if (scrollViewRef.current) {
+                        scrollViewRef.current.scrollTo({ 
+                          y: y - 120, 
+                          animated: true 
+                        });
+                      }
+                    });
+                  }, 100);
+                }
+              }}
+              onBlur={() => {
+                // Delay hiding suggestions to allow for selection
+                setTimeout(() => setShowCitySuggestions(false), 150);
+              }}
             />
           </View>
-          
+
+          {/* City suggestions dropdown - displayed separately below input */}
+          {showCitySuggestions && searchQuery.length > 0 && (
+            <View style={styles.suggestionsWrapper}>
+              <View style={styles.suggestionsCard}>
+                {isLoading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="small" color="#4361EE" />
+                    <Text style={styles.loadingText}>Finding cities...</Text>
+                  </View>
+                ) : citySuggestions.length > 0 ? (
+                  <ScrollView 
+                    style={styles.suggestionsList}
+                    showsVerticalScrollIndicator={true}
+                    keyboardShouldPersistTaps="handled"
+                    nestedScrollEnabled={true}
+                  >
+                    {citySuggestions.map((item, index) => (
+                      <TouchableOpacity 
+                        key={item.key}
+                        style={[
+                          styles.suggestionItem,
+                          index === citySuggestions.length - 1 && { borderBottomWidth: 0 }
+                        ]}
+                        onPress={() => handleCitySelect(item)}
+                      >
+                        <Ionicons name="location-outline" size={adjust(16)} color="#666" />
+                        <Text style={styles.suggestionText}>{item.display}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <View style={styles.emptyResultContainer}>
+                    <Text style={styles.emptyResultText}>No cities found</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+            
           {/* Selected Location Display */}
           {manualLocation ? (
             <View style={styles.selectedLocationContainer}>
@@ -504,21 +775,6 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
           </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
-
-    {/* Loading Overlay */}
-    <Modal
-      transparent={true}
-      animationType="fade"
-      visible={isDetectingLocation}
-      onRequestClose={() => setIsDetectingLocation(false)}
-    >
-      <View style={styles.loadingOverlay}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4361EE" />
-          <Text style={styles.loadingText}>Detecting your location...</Text>
-        </View>
-      </View>
-    </Modal>
     </SafeAreaView>
   );
 };
@@ -655,8 +911,9 @@ const styles = StyleSheet.create({
     fontSize: adjust(12),
   },
   placesInputContainer: {
-    marginBottom: STANDARD_SPACING,
+    marginBottom: 10, // Reduced spacing to make room for suggestions
     position: 'relative',
+    zIndex: 100,
   },
   locationIconContainer: {
     position: 'absolute',
@@ -717,32 +974,76 @@ const styles = StyleSheet.create({
   disabledButton: {
     backgroundColor: '#ccc',
   },
-  // Loading styles
-  loadingOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
+  cityItem: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: adjust(12),
+    paddingHorizontal: adjust(16),
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
-  loadingContainer: {
-    width: adjust(250),
-    height: adjust(120),
-    backgroundColor: '#fff',
-    borderRadius: adjust(12),
-    padding: adjust(20),
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  loadingText: {
-    marginTop: adjust(10),
+  cityItemText: {
     fontSize: adjust(14),
     color: '#333',
-    fontWeight: '500',
+    marginLeft: adjust(10),
+  },
+  suggestionsWrapper: {
+    position: 'relative',
+    marginTop: -35, // Adjust this value to position correctly below input
+    marginBottom: 20,
+    zIndex: 9999,
+  },
+  suggestionsCard: {
+    backgroundColor: '#fff',
+    borderRadius: adjust(8),
+    minHeight: adjust(50),
+    maxHeight: adjust(200),
+    marginTop: adjust(2),
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  suggestionsList: {
+    maxHeight: adjust(200),
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: adjust(12),
+    paddingHorizontal: adjust(16),
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    backgroundColor: '#fff',
+  },
+  suggestionText: {
+    fontSize: adjust(14),
+    color: '#333',
+    marginLeft: adjust(12),
+    fontWeight: '400',
+  },
+  loadingContainer: {
+    padding: adjust(15),
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginLeft: adjust(10),
+    fontSize: adjust(14),
+    color: '#4361EE',
+  },
+  emptyResultContainer: {
+    padding: adjust(15),
+    alignItems: 'center',
+  },
+  emptyResultText: {
+    fontSize: adjust(14),
+    color: '#666',
   },
 });
 

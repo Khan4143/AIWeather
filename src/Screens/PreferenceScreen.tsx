@@ -163,8 +163,11 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
       if (prev.includes(activityId)) {
         return prev.filter(id => id !== activityId);
       } else {
-        // Only allow one selection
-        return [activityId];
+        // Limit to 3 selections
+        if (prev.length < 3) {
+          return [...prev, activityId];
+        }
+        return prev; // Already at max selections
       }
     });
   };

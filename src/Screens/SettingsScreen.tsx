@@ -10,6 +10,10 @@ import {
   TextInput,
   Alert,
   Animated,
+  ActivityIndicator,
+  Platform,
+  Keyboard,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -24,6 +28,7 @@ import { PreferenceData } from '../Screens/PreferenceScreen';
 import { UserData } from '../Screens/UserInfo';
 import { DailyRoutineData } from '../Screens/DailyRoutine';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { validateCity } from '../services/weatherService';
 
 // Storage keys (should match UserDataManager's keys)
 const STORAGE_KEYS = {
@@ -63,6 +68,38 @@ interface PreferenceDataType {
 type SettingsScreenProps = {
   navigation: StackNavigationProp<any>;
 };
+
+// List of popular cities available in OpenWeather API
+const POPULAR_CITIES = [
+  'New York, US',
+  'Los Angeles, US',
+  'London, GB',
+  'Tokyo, JP',
+  'Paris, FR',
+  'Berlin, DE',
+  'Sydney, AU',
+  'Mumbai, IN',
+  'Beijing, CN',
+  'Rio de Janeiro, BR',
+  'Cairo, EG',
+  'Moscow, RU',
+  'Toronto, CA',
+  'Rome, IT',
+  'Madrid, ES',
+  'Amsterdam, NL',
+  'Dubai, AE',
+  'Mexico City, MX',
+  'Bangkok, TH',
+  'Singapore, SG',
+];
+
+const API_KEY = '87b449b894656bb5d85c61981ace7d25';
+
+// Add type definition for city objects
+interface CityObject {
+  key: string;
+  display: string;
+}
 
 const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
   // State for modal visibility
@@ -183,9 +220,40 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   
+  // Add state for location suggestions
+  const [searchQuery, setSearchQuery] = useState('');
+  const [citySuggestions, setCitySuggestions] = useState<CityObject[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const locationInputRef = useRef<TextInput>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const formScrollViewRef = useRef<ScrollView>(null);
+  
   // Load user data on component mount
   useEffect(() => {
     loadUserData();
+  }, []);
+  
+  // Add keyboard listeners
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+      }
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
   }, []);
   
   // Load all user data from UserDataManager
@@ -243,15 +311,25 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
         setSelectedStyle(preferences.style);
         
         // Handle empty arrays properly
-        const healthConcerns = Array.isArray(preferences.healthConcerns) ? preferences.healthConcerns : [];
-        const activities = Array.isArray(preferences.activities) ? preferences.activities : [];
+        const healthConcerns = Array.isArray(preferences.healthConcerns) ? 
+          preferences.healthConcerns.filter(concern => concern && concern !== '') : [];
+        const activities = Array.isArray(preferences.activities) ? 
+          preferences.activities.filter(activity => activity && activity !== '') : [];
         
         console.log('Loading preferences in Settings:', preferences);
-        console.log('Health concerns found:', healthConcerns);
-        console.log('Activities found:', activities);
+        console.log('Health concerns found:', JSON.stringify(healthConcerns));
+        console.log('Activities found:', JSON.stringify(activities));
         
-        const healthConcernIds = healthConcerns.map(concern => getHealthConcernId(concern));
-        const activityIds = activities.map(activity => getActivityPreferenceId(activity));
+        // Map display names to IDs, removing any that resolve to empty strings
+        const healthConcernIds = healthConcerns
+          .map(concern => getHealthConcernId(concern))
+          .filter(id => id !== '');
+        const activityIds = activities
+          .map(activity => getActivityPreferenceId(activity))
+          .filter(id => id !== '');
+        
+        console.log('Health concern IDs:', JSON.stringify(healthConcernIds));
+        console.log('Activity IDs:', JSON.stringify(activityIds));
         
         setSelectedHealthConcerns(healthConcernIds);
         setSelectedActivities(activityIds);
@@ -364,6 +442,9 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
   
   // Function to save personal information
   const savePersonalInfo = async () => {
+    // Hide keyboard when saving
+    Keyboard.dismiss();
+    
     try {
       console.log("===== SETTINGS SCREEN: Saving personal information =====");
       
@@ -486,23 +567,29 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
       // Get current preferences data directly from UserDataManager to preserve structure
       const currentPreferences = UserDataManager.getPreferences();
       
-      // Map IDs to display names for health concerns
-      const healthConcernNames = selectedHealthConcerns.map(id => {
-        const concern = healthOptions.find(c => c.id === id);
-        return concern ? concern.label : '';
-      }).filter(name => name !== '');
+      // Map IDs to display names for health concerns - filter out any empty strings
+      const healthConcernNames = selectedHealthConcerns
+        .filter(id => id && id !== '')
+        .map(id => {
+          const concern = healthOptions.find(c => c.id === id);
+          return concern ? concern.label : '';
+        })
+        .filter(name => name !== '');
       
-      // Map IDs to display names for activities
-      const activityNames = selectedActivities.map(id => {
-        const activity = activityPreferences.find(a => a.id === id);
-        return activity ? activity.label : '';
-      }).filter(name => name !== '');
+      // Map IDs to display names for activities - filter out any empty strings
+      const activityNames = selectedActivities
+        .filter(id => id && id !== '')
+        .map(id => {
+          const activity = activityPreferences.find(a => a.id === id);
+          return activity ? activity.label : '';
+        })
+        .filter(name => name !== '');
       
       // Log what we're saving for debugging
-      console.log('SETTINGS - Selected health concerns IDs:', JSON.stringify(selectedHealthConcerns, null, 2));
-      console.log('SETTINGS - Health concerns being saved:', JSON.stringify(healthConcernNames, null, 2));
-      console.log('SETTINGS - Selected activities IDs:', JSON.stringify(selectedActivities, null, 2));
-      console.log('SETTINGS - Activities being saved:', JSON.stringify(activityNames, null, 2));
+      console.log('SETTINGS - Selected health concerns IDs:', JSON.stringify(selectedHealthConcerns));
+      console.log('SETTINGS - Health concerns being saved:', JSON.stringify(healthConcernNames));
+      console.log('SETTINGS - Selected activities IDs:', JSON.stringify(selectedActivities));
+      console.log('SETTINGS - Activities being saved:', JSON.stringify(activityNames));
       
       // Create a NEW updated preferences object with a deep copy
       const updatedPreferences = {
@@ -546,14 +633,24 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
   
   // Helper function to toggle health concern selection
   const toggleHealthConcern = (concernId: string) => {
+    console.log('Toggling health concern:', concernId);
+    console.log('Current selections:', selectedHealthConcerns);
+    
     setSelectedHealthConcerns(prev => {
+      // Directly modify state with new array references
       if (prev.includes(concernId)) {
-        return prev.filter(id => id !== concernId);
+        // If already selected, create a new array without this item
+        const newSelections = prev.filter(id => id !== concernId);
+        console.log('Deselected. New selections:', newSelections);
+        return newSelections;
       } else {
-        // Limit to 3 selections
+        // If not selected and under limit, add to selections
         if (prev.length < 3) {
-          return [...prev, concernId];
+          const newSelections = [...prev, concernId];
+          console.log('Selected. New selections:', newSelections);
+          return newSelections;
         }
+        console.log('Already at max selections');
         return prev;
       }
     });
@@ -565,7 +662,11 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
       if (prev.includes(activityId)) {
         return prev.filter(id => id !== activityId);
       } else {
-        return [...prev, activityId];
+        // Limit to 3 selections
+        if (prev.length < 3) {
+          return [...prev, activityId];
+        }
+        return prev; // Already at max selections
       }
     });
   };
@@ -591,12 +692,183 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
     navigation.navigate(screenName, { fromSettings: true });
   };
   
+  // Fetch city suggestions from OpenWeatherMap API
+  const fetchCitySuggestions = async (query: string) => {
+    if (!query || query.length < 2) {
+      setCitySuggestions([]);
+      return;
+    }
+
+    // First check our static list for partial matches
+    const staticMatches: CityObject[] = POPULAR_CITIES.filter(city => 
+      city.toLowerCase().includes(query.toLowerCase())
+    ).map((city, index) => ({
+      key: `static-${city}-${index}`,
+      display: city
+    }));
+    
+    // If we have matches in our static list, show them immediately
+    if (staticMatches.length > 0) {
+      setCitySuggestions(staticMatches);
+      
+      // If we have sufficient local matches, we might not need the API request
+      if (staticMatches.length >= 3) {
+        return;
+      }
+    }
+
+    setIsLoading(true);
+    try {
+      // Use a wildcard approach for the API call by adding an asterisk
+      // This makes the query more lenient for partial matches
+      const searchTerm = query.endsWith('*') ? query : `${query}*`;
+      
+      const response = await fetch(
+        `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(searchTerm)}&limit=15&appid=${API_KEY}`
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch city suggestions');
+      }
+
+      const data = await response.json();
+      
+      // Format results as "City, Country Code" and add index to ensure uniqueness
+      if (data && data.length > 0) {
+        // Create formatted cities array
+        const formattedCities: CityObject[] = data.map((item: any, index: number) => ({
+          key: `${item.name}-${item.country}-${index}`,
+          display: `${item.name}, ${item.country}`
+        }));
+
+        // Filter the results to prioritize exact matches and ensure we get the best results
+        const exactMatches: CityObject[] = formattedCities.filter((city: CityObject) => 
+          city.display.toLowerCase().includes(query.toLowerCase())
+        );
+        
+        // Validate cities against the OpenWeather API to ensure they exist
+        const validatedMatches: CityObject[] = [];
+        const validationPromises = exactMatches.map(async (city: CityObject) => {
+          const isValid = await validateCity(city.display);
+          if (isValid) {
+            validatedMatches.push(city);
+          } else {
+            console.log(`City validation failed for: ${city.display}`);
+          }
+        });
+        
+        // Wait for all validation checks to complete
+        await Promise.all(validationPromises);
+        
+        // Combine with our static matches (which we assume are valid) and deduplicate
+        const allMatches: CityObject[] = [...validatedMatches];
+        
+        // Only add static matches if they don't appear to be duplicates
+        for (const staticCity of staticMatches) {
+          const isDuplicate = allMatches.some((city: CityObject) => 
+            city.display.toLowerCase() === staticCity.display.toLowerCase()
+          );
+          if (!isDuplicate) {
+            // Validate static city to ensure it exists in OpenWeather API
+            const isValid = await validateCity(staticCity.display);
+            if (isValid) {
+              allMatches.push(staticCity);
+            }
+          }
+        }
+        
+        setCitySuggestions(allMatches.slice(0, 10)); // Limit to 10 results
+      } else {
+        // Fall back to our static matches if the API returns nothing
+        // But still validate them
+        const validatedStaticMatches: CityObject[] = [];
+        const validationPromises = staticMatches.map(async (city: CityObject) => {
+          const isValid = await validateCity(city.display);
+          if (isValid) {
+            validatedStaticMatches.push(city);
+          }
+        });
+        
+        await Promise.all(validationPromises);
+        setCitySuggestions(validatedStaticMatches);
+      }
+    } catch (error) {
+      console.error('Error fetching city suggestions:', error);
+      // When an error occurs, still show any static matches we have
+      // But validate them first if possible
+      try {
+        const validatedStaticMatches: CityObject[] = [];
+        const validationPromises = staticMatches.map(async (city: CityObject) => {
+          try {
+            const isValid = await validateCity(city.display);
+            if (isValid) {
+              validatedStaticMatches.push(city);
+            }
+          } catch (err) {
+            // If validation fails, just use the static city anyway
+            validatedStaticMatches.push(city);
+          }
+        });
+        
+        await Promise.all(validationPromises);
+        setCitySuggestions(validatedStaticMatches);
+      } catch (validationError) {
+        // If all else fails, just use the static matches
+        setCitySuggestions(staticMatches);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle text input for location with debouncing
+  const handleLocationTextChange = (text: string) => {
+    setLocation(text);
+    setSearchQuery(text);
+    
+    // Always show suggestions if there's text, even if short
+    setShowCitySuggestions(text.length > 0);
+    
+    // Debounce API calls to avoid too many requests
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+    }
+    
+    // Shorter timeout for better responsiveness
+    searchTimeout.current = setTimeout(() => {
+      fetchCitySuggestions(text);
+    }, 200); // 200ms debounce time
+  };
+
+  // Handle focus on location input to scroll the form into view
+  const handleLocationFocus = () => {
+    // Use a simpler approach to scroll the form - just use a fixed offset
+    setTimeout(() => {
+      if (formScrollViewRef.current) {
+        formScrollViewRef.current.scrollTo({
+          y: 300, // Use a fixed offset to ensure the field is visible
+          animated: true,
+        });
+      }
+    }, 300);
+  };
+
+  // Handle city selection
+  const handleCitySelect = (cityObj: {key: string, display: string}) => {
+    setLocation(cityObj.display);
+    setSearchQuery('');
+    setShowCitySuggestions(false);
+  };
+  
   // Render modal content based on active modal type
   const renderModalContent = () => {
     switch (activeModal) {
       case 'personalInfo':
         return (
-          <View style={styles.modalContainer}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalContainer}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Personal Information</Text>
               <TouchableOpacity onPress={closeModal}>
@@ -604,7 +876,12 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
               </TouchableOpacity>
             </View>
             
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.formScrollView}>
+            <ScrollView 
+              ref={formScrollViewRef}
+              showsVerticalScrollIndicator={false} 
+              style={[styles.formScrollView, keyboardVisible && styles.formScrollViewExtended]}
+              keyboardShouldPersistTaps="handled"
+            >
               {/* Name Input */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Name</Text>
@@ -667,17 +944,76 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
                 />
               </View>
               
-              {/* Location Input */}
+              {/* Location Input with Suggestions */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Location</Text>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="Enter your location"
-                  placeholderTextColor="#999"
-                  value={location}
-                  onChangeText={setLocation}
-                />
+                <View style={styles.placesInputContainer}>
+                  <View style={styles.locationIconContainer}>
+                    <Ionicons name="search" size={adjust(16)} color="#666" />
+                  </View>
+                  <TextInput
+                    ref={locationInputRef}
+                    style={styles.locationInput}
+                    placeholder="Enter your city or area"
+                    placeholderTextColor="#999"
+                    value={location}
+                    onChangeText={handleLocationTextChange}
+                    onFocus={() => {
+                      setShowCitySuggestions(location.length > 0);
+                      handleLocationFocus();
+                    }}
+                    onBlur={() => {
+                      // Delay hiding suggestions to allow for selection
+                      setTimeout(() => setShowCitySuggestions(false), 150);
+                    }}
+                  />
+                </View>
+                
+                {/* City suggestions dropdown */}
+                {showCitySuggestions && searchQuery.length > 0 && (
+                  <View style={[
+                    styles.suggestionsWrapper,
+                    keyboardVisible && { position: 'relative' }
+                  ]}>
+                    <View style={styles.suggestionsCard}>
+                      {isLoading ? (
+                        <View style={styles.loadingContainer}>
+                          <ActivityIndicator size="small" color="#4361EE" />
+                          <Text style={styles.loadingText}>Finding cities...</Text>
+                        </View>
+                      ) : citySuggestions.length > 0 ? (
+                        <ScrollView 
+                          style={styles.suggestionsList}
+                          showsVerticalScrollIndicator={true}
+                          keyboardShouldPersistTaps="handled"
+                          nestedScrollEnabled={true}
+                        >
+                          {citySuggestions.map((item, index) => (
+                            <TouchableOpacity 
+                              key={item.key}
+                              style={[
+                                styles.suggestionItem,
+                                index === citySuggestions.length - 1 && { borderBottomWidth: 0 }
+                              ]}
+                              onPress={() => handleCitySelect(item)}
+                            >
+                              <Ionicons name="location-outline" size={adjust(16)} color="#666" />
+                              <Text style={styles.suggestionText}>{item.display}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      ) : (
+                        <View style={styles.emptyResultContainer}>
+                          <Text style={styles.emptyResultText}>No cities found</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
               </View>
+              
+              {/* Add extra padding at the bottom when keyboard is visible */}
+              {keyboardVisible && <View style={styles.keyboardSpacer} />}
             </ScrollView>
             
             <View style={styles.buttonContainer}>
@@ -694,7 +1030,7 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
                 <Text style={styles.saveButtonText}>Save Changes</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         );
       case 'dailyRoutine':
         return (
@@ -935,30 +1271,71 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
                 <Text style={styles.sectionDescription}>Select up to 3 health concerns (optional)</Text>
                 
                 <View style={styles.healthConcernsGrid}>
-                  {healthOptions.map(concern => (
-                    <TouchableOpacity
-                      key={concern.id}
-                      style={[
-                        styles.concernOption,
-                        selectedHealthConcerns.includes(concern.id) && styles.selectedConcernOption
-                      ]}
-                      onPress={() => toggleHealthConcern(concern.id)}
-                    >
-                      <Text style={[
-                        styles.concernLabel,
-                        selectedHealthConcerns.includes(concern.id) && styles.selectedConcernLabel
-                      ]}>
-                        {concern.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  {healthOptions.map(concern => {
+                    // Check if this concern is selected by exact ID match
+                    const isSelected = selectedHealthConcerns.indexOf(concern.id) !== -1;
+                    return (
+                      <TouchableOpacity
+                        key={concern.id}
+                        style={{
+                          width: '48%',
+                          backgroundColor: isSelected ? '#4361EE' : '#f9f9f9',
+                          borderRadius: adjust(6),
+                          padding: adjust(12),
+                          marginBottom: adjust(8),
+                          borderWidth: isSelected ? 2 : 1,
+                          borderColor: isSelected ? '#4361EE' : '#eee',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          minHeight: adjust(44),
+                          shadowColor: isSelected ? '#000' : 'transparent',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: isSelected ? 0.3 : 0,
+                          shadowRadius: isSelected ? 3 : 0,
+                          elevation: isSelected ? 3 : 0,
+                        }}
+                        onPress={() => {
+                          console.log('Health concern pressed:', concern.id);
+                          console.log('Current array:', JSON.stringify(selectedHealthConcerns));
+                          
+                          // Create a completely fresh array each time
+                          let newSelections;
+                          
+                          if (selectedHealthConcerns.indexOf(concern.id) !== -1) {
+                            // Remove it if selected
+                            newSelections = selectedHealthConcerns
+                              .filter(id => id !== concern.id && id !== '');
+                          } else {
+                            // Add it if not at limit
+                            if (selectedHealthConcerns.filter(id => id !== '').length < 3) {
+                              newSelections = [...selectedHealthConcerns.filter(id => id !== ''), concern.id];
+                            } else {
+                              newSelections = selectedHealthConcerns.filter(id => id !== '');
+                            }
+                          }
+                          
+                          console.log('Setting selections to:', JSON.stringify(newSelections));
+                          setSelectedHealthConcerns(newSelections);
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: adjust(13),
+                          fontWeight: isSelected ? '700' : '500',
+                          color: isSelected ? 'white' : '#333',
+                          textAlign: 'center',
+                        }}>
+                          {concern.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
               
               {/* Activity Preferences */}
               <View style={styles.sectionContainer}>
                 <Text style={styles.sectionTitle}>Weather-Sensitive Activities</Text>
-                <Text style={styles.sectionDescription}>Select activities you enjoy (optional)</Text>
+                <Text style={styles.sectionDescription}>Select up to 3 activities you enjoy (optional)</Text>
                 
                 <View style={styles.activitiesGrid}>
                   {activityPreferences.map(activity => (
@@ -1374,6 +1751,7 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 4,
     maxWidth: adjust(320),
+    maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1437,6 +1815,9 @@ const styles = StyleSheet.create({
   formScrollView: {
     maxHeight: adjust(420),
     marginBottom: adjust(10),
+  },
+  formScrollViewExtended: {
+    maxHeight: Platform.OS === 'ios' ? adjust(300) : adjust(350),
   },
   formGroup: {
     marginBottom: adjust(15),
@@ -1541,6 +1922,13 @@ const styles = StyleSheet.create({
   selectedStyleOption: {
     backgroundColor: '#4361EE',
     borderColor: '#4361EE',
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 3,
+    transform: [{ scale: 1.05 }],
   },
   styleIconContainer: {
     width: adjust(30),
@@ -1579,23 +1967,34 @@ const styles = StyleSheet.create({
     width: '48%',
     backgroundColor: '#f9f9f9',
     borderRadius: adjust(6),
-    padding: adjust(8),
-    marginBottom: adjust(6),
+    padding: adjust(12),
+    marginBottom: adjust(8),
     borderWidth: 1,
     borderColor: '#eee',
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: adjust(44),
   },
   selectedConcernOption: {
     backgroundColor: '#4361EE',
     borderColor: '#4361EE',
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 3,
+    transform: [{ scale: 1.05 }],
   },
   concernLabel: {
-    fontSize: adjust(12),
+    fontSize: adjust(13),
     fontWeight: '500',
     color: '#333',
+    textAlign: 'center',
   },
   selectedConcernLabel: {
-    color: '#fff',
+    color: 'white',
+    fontWeight: '700',
   },
   activityPreferenceBox: {
     width: '48%',
@@ -1764,6 +2163,88 @@ const styles = StyleSheet.create({
     fontSize: adjust(14),
     color: '#333',
     fontWeight: '500',
+  },
+  placesInputContainer: {
+    position: 'relative',
+    zIndex: 100,
+  },
+  locationIconContainer: {
+    position: 'absolute',
+    left: adjust(10),
+    top: adjust(15),
+    zIndex: 10,
+  },
+  locationInput: {
+    height: adjust(42),
+    paddingHorizontal: adjust(12),
+    paddingLeft: adjust(35),
+    fontSize: adjust(13),
+    color: '#333',
+    backgroundColor: '#f8f9fa',
+    borderRadius: adjust(8),
+    borderColor: '#e0e0e0',
+    borderWidth: 1,
+    zIndex: 1,
+  },
+  suggestionsWrapper: {
+    position: 'relative',
+    marginTop: 5,
+    marginBottom: 5,
+    zIndex: 9999,
+  },
+  suggestionsCard: {
+    backgroundColor: '#fff',
+    borderRadius: adjust(8),
+    minHeight: adjust(50),
+    maxHeight: adjust(150), // Reduced height to ensure visibility
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  suggestionsList: {
+    maxHeight: adjust(200),
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: adjust(12),
+    paddingHorizontal: adjust(16),
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    backgroundColor: '#fff',
+  },
+  suggestionText: {
+    fontSize: adjust(14),
+    color: '#333',
+    marginLeft: adjust(12),
+    fontWeight: '400',
+  },
+  loadingContainer: {
+    padding: adjust(15),
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginLeft: adjust(10),
+    fontSize: adjust(14),
+    color: '#4361EE',
+  },
+  emptyResultContainer: {
+    padding: adjust(15),
+    alignItems: 'center',
+  },
+  emptyResultText: {
+    fontSize: adjust(14),
+    color: '#666',
+  },
+  keyboardSpacer: {
+    height: adjust(100),
   },
 });
 

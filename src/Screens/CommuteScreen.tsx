@@ -12,6 +12,8 @@ import {
   Platform,
   Keyboard,
   StatusBar,
+  ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -20,6 +22,10 @@ import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
+import { generateResponse } from '../services/geminiService';
+import { useWeatherContext } from '../contexts/WeatherContext';
+import { UserData } from '../Screens/UserInfo';
+import { getApiKey, hasApiKey } from '../utils/apiKeys';
 
 // Define message types
 interface Message {
@@ -27,6 +33,7 @@ interface Message {
   text: string;
   sender: 'user' | 'skylar';
   timestamp: Date;
+  loading?: boolean;
 }
 
 // Define predefined questions
@@ -41,7 +48,22 @@ const predefinedQuestions = [
   { id: '8', text: 'Do I need an umbrella today?' },
 ];
 
+// Define fallback responses for common weather questions
+const fallbackResponses: Record<string, string> = {
+  'default': "I can provide general weather information, but I don't have access to real-time data right now. Please try again later.",
+  'rain': "I can't check for rain data at the moment, but I recommend checking your local weather service.",
+  'temperature': "I'm not able to retrieve temperature data right now. Please try asking again later.",
+  'forecast': "I'm unable to access forecast information right now. Please check back soon.",
+  'today': "I can't retrieve today's weather information right now. Please try again later.",
+  'check today\'s weather': "I'm sorry, I can't access the current weather data. Please try again later or check your local weather service.",
+  'will it rain today': "I'm unable to check rain forecasts at the moment. Please try again later."
+};
+
 const CommuteScreen = () => {
+  // Access weather context to get current weather data
+  const { currentWeather, forecast, preferredUnits } = useWeatherContext();
+  const userLocation = UserData.location || 'your location';
+  
   // Chat state
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -52,8 +74,17 @@ const CommuteScreen = () => {
     },
   ]);
   const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const [showKeyboard, setShowKeyboard] = useState(false);
+  
+  // Toast notification state
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Track API failure count for fallback logic
+  const [apiFailureCount, setApiFailureCount] = useState<number>(0);
 
   // Handle keyboard show/hide
   useEffect(() => {
@@ -77,76 +108,288 @@ const CommuteScreen = () => {
     };
   }, []);
 
+  // Show toast notification
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setToastVisible(true);
+    fadeAnim.setValue(0);
+    
+    // Fade in
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+    
+    // Auto hide after 3 seconds
+    setTimeout(() => {
+      // Fade out
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setToastVisible(false);
+      });
+    }, 3000);
+  };
+
   // Scroll to bottom of chat
   const scrollToBottom = () => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
   };
 
   // Add message to chat
-  const addMessage = (text: string, sender: 'user' | 'skylar') => {
+  const addMessage = (text: string, sender: 'user' | 'skylar', isLoading = false) => {
+    const timestamp = new Date();
+    const uniqueId = `${sender}-${timestamp.getTime()}-${Math.random().toString(36).substring(2, 9)}`;
+    
     const newMessage: Message = {
-      id: Date.now().toString(),
+      id: uniqueId,
       text,
       sender,
-      timestamp: new Date(),
+      timestamp,
+      loading: isLoading,
     };
-    setMessages((prevMessages) => [...prevMessages, newMessage]);
+    
+    // Prevent duplicate error messages (don't add the same error message twice in a row)
+    if (text && text.includes("I'm having trouble") || text.includes("technical problem")) {
+      setMessages(prevMessages => {
+        // Check if the last message was an error message
+        const lastMessage = prevMessages[prevMessages.length - 1];
+        if (lastMessage && 
+            (lastMessage.text.includes("I'm having trouble") || 
+             lastMessage.text.includes("technical problem"))) {
+          // Don't add duplicate error message
+          return prevMessages;
+        }
+        return [...prevMessages, newMessage];
+      });
+    } else {
+      // Regular message, just add it
+      setMessages(prevMessages => [...prevMessages, newMessage]);
+    }
     
     // Auto scroll to bottom
     setTimeout(() => {
       scrollToBottom();
     }, 100);
+    
+    return uniqueId;
+  };
+
+  // Update a message by its ID
+  const updateMessage = (messageId: string, text: string, isLoading = false) => {
+    setMessages((prevMessages) => 
+      prevMessages.map((msg) => 
+        msg.id === messageId 
+          ? { ...msg, text, loading: isLoading } 
+          : msg
+      )
+    );
+  };
+
+  // Get a fallback response based on the query
+  const getFallbackResponse = (query: string): string => {
+    // Convert to lowercase for easier matching
+    const lowerQuery = query.toLowerCase();
+    
+    // Check for specific keywords
+    if (lowerQuery.includes('rain')) {
+      return fallbackResponses['rain'];
+    } else if (lowerQuery.includes('temperature') || lowerQuery.includes('hot') || lowerQuery.includes('cold')) {
+      return fallbackResponses['temperature']; 
+    } else if (lowerQuery.includes('forecast')) {
+      return fallbackResponses['forecast'];
+    } else if (lowerQuery.includes('today')) {
+      return fallbackResponses['today'];
+    } else if (fallbackResponses[query]) {
+      return fallbackResponses[query];
+    }
+    
+    return fallbackResponses['default'];
   };
 
   // Handle send message
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (inputText.trim() === '') return;
+    const userInput = inputText.trim();
+    
+    // Basic content validation
+    if (containsInvalidContent(userInput)) {
+      // Show error toast
+      showToast('Please avoid using inappropriate language or special commands.');
+      return;
+    }
+    
+    // Check if API key is available
+    if (!hasApiKey('gemini')) {
+      showToast('API key not configured. Please add your Gemini API key in settings.');
+      // Add a helpful message for the developer/user
+      addMessage("To use the chat feature, you need to add your Gemini API key. Please update the API key in src/utils/apiKeys.ts", 'skylar');
+      return;
+    }
     
     // Add user message
-    addMessage(inputText, 'user');
+    addMessage(userInput, 'user');
     setInputText('');
+    setIsLoading(true);
     
-    // Simulate response after delay
-    setTimeout(() => {
-      respondToMessage(inputText);
-    }, 1000);
+    // If we've had multiple API failures, use fallback responses
+    if (apiFailureCount >= 3) {
+      const fallbackResponse = getFallbackResponse(userInput);
+      setTimeout(() => {
+        addMessage(fallbackResponse, 'skylar');
+        setIsLoading(false);
+      }, 800);
+      return;
+    }
+    
+    // Show typing indicator
+    const loadingId = addMessage('', 'skylar', true);
+    
+    try {
+      // Prepare weather context for the API
+      const weatherInfo = {
+        currentWeather: currentWeather,
+        forecast: forecast,
+        location: userLocation,
+        units: preferredUnits
+      };
+      
+      // Get response from Gemini API
+      const response = await generateResponse(userInput, weatherInfo);
+      
+      // Update the message with the actual response
+      updateMessage(loadingId, response.text, false);
+      
+      // Reset API failure count on success
+      if (apiFailureCount > 0) {
+        setApiFailureCount(0);
+      }
+    } catch (error: any) {
+      console.error('Error getting response:', error);
+      
+      // Check if the error is related to missing API key
+      if (error.message?.includes('API key') || !hasApiKey('gemini')) {
+        updateMessage(
+          loadingId, 
+          "I can't connect because I need a valid Gemini API key. Please update the API key in src/utils/apiKeys.ts", 
+          false
+        );
+      } else {
+        updateMessage(
+          loadingId, 
+          "I'm sorry, I'm having trouble connecting to my weather brain. Please try again later.", 
+          false
+        );
+      }
+      
+      // Increment API failure count
+      setApiFailureCount(count => count + 1);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Simple validation function to detect potentially invalid content
+  const containsInvalidContent = (text: string): boolean => {
+    // Convert to lowercase for easier comparison
+    const lowerText = text.toLowerCase();
+    
+    // List of offensive or invalid patterns to check
+    const invalidPatterns = [
+      // Offensive language patterns
+      /\b(f[*\s]?[u\*\s]c?k|sh[i\*\s]t|b[i\*\s]tch|d[i\*\s]ck|a[s\$\*]s|\bc[*\s]?u[*\s]?n[*\s]?t)\b/i,
+      // Command injection patterns
+      /\b(\/|\\|curl|wget|exec|eval|system|command|passthru|shell_exec)\b/i,
+      // SQL injection patterns
+      /\b(select\s+from|insert\s+into|update\s+set|delete\s+from|drop\s+table|union\s+select)\b/i
+    ];
+    
+    // Check if any pattern matches
+    return invalidPatterns.some(pattern => pattern.test(lowerText));
   };
 
   // Handle predefined question selection
-  const handleQuestionSelect = (question: string) => {
-    addMessage(question, 'user');
-    
-    // Simulate response after delay
-    setTimeout(() => {
-      respondToMessage(question);
-    }, 1000);
-  };
-
-  // Generate responses based on user input
-  const respondToMessage = (text: string) => {
-    let response = '';
-    
-    const lowerText = text.toLowerCase();
-    
-    if (lowerText.includes('rain') && lowerText.includes('lunch') && lowerText.includes('1 pm')) {
-      response = 'No rain forecasted at 1 PM ☀️\nThe temperature will be perfect for outdoor dining at 72°F!';
-    } else if (lowerText.includes('rain today')) {
-      response = 'There\'s a 20% chance of light rain this evening around 8 PM, but the day should be mostly clear.';
-    } else if (lowerText.includes('check today') || lowerText.includes('today\'s weather')) {
-      response = 'Today will be mostly sunny with temperatures between 65°F and 78°F. Perfect day to be outside!';
-    } else if (lowerText.includes('evening') || lowerText.includes('tonight')) {
-      response = 'This evening will be cool and comfortable, around 65°F with clear skies. Great for outdoor activities!';
-    } else if (lowerText.includes('lunch reminder')) {
-      response = 'I\'ve set a reminder for your lunch at 1 PM. I\'ll notify you 15 minutes before with a weather update.';
-    } else if (lowerText.includes('commute')) {
-      response = 'Your morning commute looks clear with temperatures around 68°F. The evening commute may have light traffic due to good weather conditions.';
-    } else if (lowerText.includes('umbrella')) {
-      response = 'You shouldn\'t need an umbrella today! The forecast shows less than 10% chance of precipitation.';
-    } else {
-      response = 'I\'m here to help with your weather-related questions. Feel free to ask about today\'s forecast, rain chances, or your commute!';
+  const handleQuestionSelect = async (question: string) => {
+    // Check if API key is available
+    if (!hasApiKey('gemini')) {
+      showToast('API key is not configured. Please check your settings.');
+      return;
     }
     
-    addMessage(response, 'skylar');
+    // Add user message
+    addMessage(question, 'user');
+    setIsLoading(true);
+    
+    // If we've had multiple API failures, use fallback responses
+    if (apiFailureCount >= 3) {
+      const fallbackResponse = getFallbackResponse(question);
+      setTimeout(() => {
+        addMessage(fallbackResponse, 'skylar');
+        setIsLoading(false);
+      }, 800);
+      return;
+    }
+    
+    // Show typing indicator
+    const loadingId = addMessage('', 'skylar', true);
+    
+    try {
+      // Prepare weather context for the API
+      const weatherInfo = {
+        currentWeather: currentWeather,
+        forecast: forecast,
+        location: userLocation,
+        units: preferredUnits
+      };
+      
+      // Get response from Gemini API for predefined question
+      const response = await generateResponse(question, weatherInfo);
+      
+      // Update the message with the actual response
+      updateMessage(loadingId, response.text, false);
+      
+      // Reset API failure count on success
+      if (apiFailureCount > 0) {
+        setApiFailureCount(0);
+      }
+    } catch (error: any) {
+      console.error('Error getting response for predefined question:', error);
+      updateMessage(loadingId, "I'm sorry, I'm having trouble connecting to my weather brain. Please try again later.", false);
+      
+      // Increment API failure count
+      setApiFailureCount(count => count + 1);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Render message loading state
+  const renderMessageContent = (message: Message) => {
+    if (message.loading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color={message.sender === 'user' ? '#fff' : '#4361EE'} />
+          <Text style={[
+            styles.loadingText,
+            message.sender === 'user' ? styles.userMessageText : styles.skylarMessageText
+          ]}>Thinking...</Text>
+        </View>
+      );
+    }
+    
+    return (
+      <Text 
+        style={[
+          styles.messageText,
+          message.sender === 'user' ? styles.userMessageText : styles.skylarMessageText
+        ]}
+      >
+        {message.text}
+      </Text>
+    );
   };
 
   return (
@@ -182,7 +425,7 @@ const CommuteScreen = () => {
           >
             {messages.map((message) => (
               <View 
-                key={message.id} 
+                key={`message-${message.id}`} 
                 style={[
                   styles.messageBubble, 
                   message.sender === 'user' 
@@ -203,16 +446,7 @@ const CommuteScreen = () => {
                       : styles.skylarMessageContent
                   ]}
                 >
-                  <Text 
-                    style={[
-                      styles.messageText,
-                      message.sender === 'user' 
-                        ? styles.userMessageText 
-                        : styles.skylarMessageText
-                    ]}
-                  >
-                    {message.text}
-                  </Text>
+                  {renderMessageContent(message)}
                 </View>
               </View>
             ))}
@@ -226,54 +460,26 @@ const CommuteScreen = () => {
               style={styles.questionsOuterContainer}
               contentContainerStyle={styles.questionsScrollContent}
             >
-              <TouchableOpacity
-                style={[styles.questionButton, styles.questionButtonYellow]}
-                onPress={() => handleQuestionSelect('Check today\'s weather')}
-              >
-                <Text style={[styles.questionText, styles.questionTextYellow]} numberOfLines={1}>
-                  Check today's weather
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.questionButton, styles.questionButtonBlue]}
-                onPress={() => handleQuestionSelect('Will it rain today?')}
-              >
-                <Text style={[styles.questionText, styles.questionTextBlue]} numberOfLines={1}>
-                  Will it rain today?
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.questionButton, styles.questionButtonYellow]}
-                onPress={() => handleQuestionSelect('Will it rain during my lunch break at 1 PM?')}
-              >
-                <Text style={[styles.questionText, styles.questionTextYellow]} numberOfLines={1}>
-                  Will it rain during my lunch break at 1 PM?
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.questionButton, styles.questionButtonBlue]}
-                onPress={() => handleQuestionSelect('Set lunch reminder')}
-              >
-                <Text style={[styles.questionText, styles.questionTextBlue]} numberOfLines={1}>
-                  Set lunch reminder
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.questionButton, styles.questionButtonYellow]}
-                onPress={() => handleQuestionSelect('Check evening forecast')}
-              >
-                <Text style={[styles.questionText, styles.questionTextYellow]} numberOfLines={1}>
-                  Check evening forecast
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.questionButton, styles.questionButtonBlue]}
-                onPress={() => handleQuestionSelect('What\'s the weather like this evening?')}
-              >
-                <Text style={[styles.questionText, styles.questionTextBlue]} numberOfLines={1}>
-                  What's the weather like this evening?
-                </Text>
-              </TouchableOpacity>
+              {predefinedQuestions.map((question, index) => (
+                <TouchableOpacity
+                  key={`question-${question.id}`}
+                  style={[
+                    styles.questionButton, 
+                    index % 2 === 0 ? styles.questionButtonYellow : styles.questionButtonBlue
+                  ]}
+                  onPress={() => handleQuestionSelect(question.text)}
+                >
+                  <Text 
+                    style={[
+                      styles.questionText, 
+                      index % 2 === 0 ? styles.questionTextYellow : styles.questionTextBlue
+                    ]} 
+                    numberOfLines={1}
+                  >
+                    {question.text}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </ScrollView>
           )}
           
@@ -297,11 +503,25 @@ const CommuteScreen = () => {
               <TouchableOpacity 
                 style={styles.sendButton}
                 onPress={handleSendMessage}
+                disabled={isLoading}
               >
                 <MaterialIcons name="send" size={adjust(20)} color="#fff" />
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
+          
+          {/* Toast notification for invalid input */}
+          {toastVisible && (
+            <Animated.View 
+              style={[
+                styles.toast,
+                { opacity: fadeAnim }
+              ]}
+            >
+              <MaterialIcons name="error-outline" size={adjust(18)} color="#fff" />
+              <Text style={styles.toastText}>{toastMessage}</Text>
+            </Animated.View>
+          )}
         </SafeAreaView>
       </LinearGradient>
     </>
@@ -481,6 +701,44 @@ const styles = StyleSheet.create({
   headerDivider: {
     height: 1,
     backgroundColor: 'rgba(67, 97, 238, 0.2)',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: adjust(20),
+    minWidth: adjust(80),
+    paddingHorizontal: adjust(5),
+    paddingVertical: adjust(3),
+  },
+  loadingText: {
+    marginLeft: adjust(8),
+    fontSize: adjust(12),
+    fontStyle: 'italic',
+  },
+  toast: {
+    position: 'absolute',
+    bottom: adjust(70),
+    left: adjust(20),
+    right: adjust(20),
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    paddingVertical: adjust(10),
+    paddingHorizontal: adjust(16),
+    borderRadius: adjust(8),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  toastText: {
+    color: '#fff',
+    fontSize: adjust(14),
+    marginLeft: adjust(8),
+    fontWeight: '500',
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,6 +11,7 @@ import {
   Modal,
   TouchableWithoutFeedback,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -20,6 +21,9 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
+import { useWeatherContext } from '../contexts/WeatherContext';
+import { format } from 'date-fns';
+import { generateResponse } from '../services/geminiService';
 
 // Planned event type
 interface PlannedEvent {
@@ -29,6 +33,54 @@ interface PlannedEvent {
   date: string;
   time: string;
   duration: string;
+}
+
+// Add these interfaces at the top of the file, after existing interfaces
+interface WeatherHourlyData {
+  date: number;
+  temperature: {
+    day: number;
+    min?: number;
+    max?: number;
+    night?: number;
+    eve?: number;
+    morn?: number;
+  };
+  weather: {
+    id: number;
+    main: string;
+    description: string;
+    icon: string;
+  };
+  pop?: number; // Probability of precipitation
+  windSpeed: number;
+  humidity: number;
+}
+
+interface WeatherDailyData {
+  date: number;
+  temperature: {
+    day: number;
+    min: number;
+    max: number;
+    night: number;
+    eve: number;
+    morn: number;
+  };
+  weather: {
+    id: number;
+    main: string;
+    description: string;
+    icon: string;
+  };
+  sunrise: number;
+  sunset: number;
+}
+
+interface WeatherTimeData {
+  daily: WeatherDailyData;
+  hourly: WeatherHourlyData;
+  selectedTime: number;
 }
 
 const PlanningScreen = ({ navigation }: { navigation: any }) => {
@@ -46,6 +98,15 @@ const PlanningScreen = ({ navigation }: { navigation: any }) => {
   // For tracking format updates
   const [formattingComplete, setFormattingComplete] = useState(false);
   
+  // Weather recommendation state
+  const [showWeatherRecommendation, setShowWeatherRecommendation] = useState(false);
+  const [weatherRecommendation, setWeatherRecommendation] = useState<string>('');
+  const [isLoadingRecommendation, setIsLoadingRecommendation] = useState(false);
+  const [recommendedTimes, setRecommendedTimes] = useState<string[]>([]);
+  
+  // Get weather data from context
+  const { forecast, currentWeather, isLoading: isLoadingWeather } = useWeatherContext();
+  
   // Activity options
   const activities = [
     { id: '1', name: 'Jogging', icon: 'run', iconType: 'MaterialCommunityIcons' },
@@ -58,13 +119,45 @@ const PlanningScreen = ({ navigation }: { navigation: any }) => {
     { id: '8', name: 'Sports', icon: 'sports', iconType: 'MaterialIcons' },
   ];
   
-  // Weather forecast data
-  const forecastData = [
-    { id: '1', time: '2 PM', temp: '24°', icon: 'sunny-outline' },
-    { id: '2', time: '3 PM', temp: '23°', icon: 'cloudy-outline' },
-    { id: '3', time: '4 PM', temp: '22°', icon: 'cloud' },
-    { id: '4', time: '5 PM', temp: '21°', icon: 'rainy-outline' },
-  ];
+  // Weather forecast data - now dynamically generated from actual forecast when available
+  const forecastData = useMemo(() => {
+    if (!forecast || !forecast.hourly || forecast.hourly.length < 4) {
+      // Return placeholder data if forecast isn't available
+      return [
+        { id: '1', time: '2 PM', temp: '24°', icon: 'sunny-outline' },
+        { id: '2', time: '3 PM', temp: '23°', icon: 'cloudy-outline' },
+        { id: '3', time: '4 PM', temp: '22°', icon: 'cloud' },
+        { id: '4', time: '5 PM', temp: '21°', icon: 'rainy-outline' },
+      ];
+    }
+
+    // Convert forecast data to the format we need
+    return forecast.hourly.slice(0, 6).map((hourData, index) => {
+      const time = format(new Date(hourData.date * 1000), 'h a');
+      const temp = Math.round(hourData.temperature.day) + '°';
+      
+      // Map weather conditions to icons
+      let icon = 'sunny-outline';
+      if (hourData.weather.icon.includes('01')) icon = 'sunny-outline';
+      else if (hourData.weather.icon.includes('02')) icon = 'partly-sunny-outline';
+      else if (hourData.weather.icon.includes('03') || hourData.weather.icon.includes('04')) icon = 'cloudy-outline';
+      else if (hourData.weather.icon.includes('09') || hourData.weather.icon.includes('10')) icon = 'rainy-outline';
+      else if (hourData.weather.icon.includes('11')) icon = 'thunderstorm-outline';
+      else if (hourData.weather.icon.includes('13')) icon = 'snow-outline';
+      else if (hourData.weather.icon.includes('50')) icon = 'cloud-outline';
+      
+      return {
+        id: index.toString(),
+        time,
+        temp,
+        icon,
+        condition: hourData.weather.description,
+        pop: hourData.pop || 0, // Probability of precipitation
+        wind: hourData.windSpeed,
+        humidity: hourData.humidity
+      };
+    });
+  }, [forecast]);
 
   // State for date and time
   const [selectedDate, setSelectedDate] = useState('Today, Feb 15');
@@ -136,10 +229,203 @@ const PlanningScreen = ({ navigation }: { navigation: any }) => {
     Alert.alert('Success', 'Your event has been planned!');
   };
 
-  // Modify the handleCheckWeather to just check weather
-  const handleCheckWeather = () => {
-    console.log('Checking weather for selected time and date');
-    // Here you would add code to get weather data for the selected time
+  // Function to get weather data for the selected date and time
+  const getWeatherForSelectedTime = (): WeatherTimeData | null => {
+    if (!forecast) return null;
+    
+    const selectedDateObj = new Date();
+    
+    // Parse the selected date string to get day offset
+    const dayOffset = selectedDateIndex; // 0 for today, 1 for tomorrow, etc.
+    selectedDateObj.setDate(selectedDateObj.getDate() + dayOffset);
+    
+    // Parse the selected time
+    selectedDateObj.setHours(selectedHour);
+    selectedDateObj.setMinutes(selectedMinute);
+    selectedDateObj.setSeconds(0);
+    
+    // Get forecast for the selected date
+    const selectedDayForecasts = forecast.daily.filter(day => {
+      const forecastDate = new Date(day.date * 1000);
+      return forecastDate.getDate() === selectedDateObj.getDate() &&
+             forecastDate.getMonth() === selectedDateObj.getMonth() &&
+             forecastDate.getFullYear() === selectedDateObj.getFullYear();
+    });
+    
+    if (selectedDayForecasts.length === 0) return null;
+    
+    // Get hourly forecasts for the selected day
+    const selectedDayHourly = forecast.hourly.filter(hour => {
+      const hourDate = new Date(hour.date * 1000);
+      return hourDate.getDate() === selectedDateObj.getDate() &&
+             hourDate.getMonth() === selectedDateObj.getMonth() &&
+             hourDate.getFullYear() === selectedDateObj.getFullYear();
+    });
+    
+    // Find the hourly forecast closest to the selected time
+    let closestHourlyForecast: WeatherHourlyData | null = null;
+    let smallestTimeDiff = Infinity;
+    
+    selectedDayHourly.forEach(hour => {
+      const hourDate = new Date(hour.date * 1000);
+      const timeDiff = Math.abs(hourDate.getTime() - selectedDateObj.getTime());
+      if (timeDiff < smallestTimeDiff) {
+        smallestTimeDiff = timeDiff;
+        closestHourlyForecast = hour as WeatherHourlyData;
+      }
+    });
+    
+    if (!closestHourlyForecast) return null;
+    
+    return {
+      daily: selectedDayForecasts[0] as WeatherDailyData,
+      hourly: closestHourlyForecast,
+      selectedTime: selectedDateObj.getTime()
+    };
+  };
+  
+  // Find alternative times with better weather for the selected activity
+  const findBetterTimes = (weatherData: WeatherTimeData, activityName: string): string[] => {
+    if (!forecast || !weatherData) return [];
+    
+    // Activity-specific weather preferences
+    const activityPreferences: {[key: string]: { maxRainChance: number, maxWindSpeed: number, idealTemp: number }} = {
+      'Jogging': { maxRainChance: 0.3, maxWindSpeed: 20, idealTemp: 18 },
+      'Picnic': { maxRainChance: 0.1, maxWindSpeed: 15, idealTemp: 23 },
+      'Hiking': { maxRainChance: 0.2, maxWindSpeed: 18, idealTemp: 20 },
+      'BBQ': { maxRainChance: 0.1, maxWindSpeed: 10, idealTemp: 25 },
+      'Beach': { maxRainChance: 0.1, maxWindSpeed: 12, idealTemp: 27 },
+      'Outdoor Party': { maxRainChance: 0.2, maxWindSpeed: 15, idealTemp: 22 },
+      'Camping': { maxRainChance: 0.3, maxWindSpeed: 15, idealTemp: 18 },
+      'Sports': { maxRainChance: 0.2, maxWindSpeed: 15, idealTemp: 21 },
+    };
+    
+    // Default preferences if activity not found
+    const defaultPrefs = { maxRainChance: 0.2, maxWindSpeed: 15, idealTemp: 22 };
+    
+    // Get preferences for the selected activity
+    const prefs = activityPreferences[activityName] || defaultPrefs;
+    
+    // Check 24 hours before and after the selected time
+    const selectedTime = new Date(weatherData.selectedTime);
+    const alternativeTimes: Array<{time: string, score: number, hourDate: Date}> = [];
+    
+    // Check each hourly forecast
+    forecast.hourly.forEach(hour => {
+      const hourDate = new Date(hour.date * 1000);
+      const timeDiff = Math.abs(hourDate.getTime() - selectedTime.getTime());
+      
+      // Only consider times within 24 hours of the selected time
+      if (timeDiff <= 24 * 60 * 60 * 1000) {
+        // Check if this time has better weather
+        const isBetterWeather = 
+          (hour.pop || 0) <= prefs.maxRainChance && 
+          hour.windSpeed <= prefs.maxWindSpeed &&
+          Math.abs(hour.temperature.day - prefs.idealTemp) < 5;
+        
+        if (isBetterWeather) {
+          alternativeTimes.push({
+            time: format(hourDate, 'EEE, MMM d, h:mm a'),
+            score: calculateWeatherScore(hour, prefs),
+            hourDate: hourDate
+          });
+        }
+      }
+    });
+    
+    // Sort by weather score (higher is better)
+    alternativeTimes.sort((a, b) => b.score - a.score);
+    
+    // Return top 3 alternative times
+    return alternativeTimes.slice(0, 3).map(alt => alt.time);
+  };
+  
+  // Calculate a score for the weather conditions
+  const calculateWeatherScore = (forecast: WeatherHourlyData, preferences: { maxRainChance: number, maxWindSpeed: number, idealTemp: number }) => {
+    // Start with a base score of 100
+    let score = 100;
+    
+    // Subtract points for rain chance
+    score -= (forecast.pop || 0) * 100;
+    
+    // Subtract points for wind speed distance from ideal
+    score -= Math.min(Math.abs(forecast.windSpeed - 5), preferences.maxWindSpeed) * 2;
+    
+    // Subtract points for temperature distance from ideal
+    score -= Math.abs(forecast.temperature.day - preferences.idealTemp) * 3;
+    
+    return score;
+  };
+
+  // Modify the handleCheckWeather to analyze forecast and provide recommendations
+  const handleCheckWeather = async () => {
+    if (!selectedActivity) {
+      Alert.alert('Missing Information', 'Please select an activity first');
+      return;
+    }
+    
+    if (isLoadingWeather || !forecast) {
+      Alert.alert('Weather Data', 'Weather data is still loading. Please try again in a moment.');
+      return;
+    }
+    
+    setIsLoadingRecommendation(true);
+    
+    try {
+      // Get weather data for the selected time
+      const weatherData = getWeatherForSelectedTime();
+      
+      if (!weatherData) {
+        throw new Error('Could not retrieve weather data for the selected time');
+      }
+      
+      // Get the selected activity name
+      const activityObj = activities.find(a => a.id === selectedActivity);
+      const activityName = activityObj ? activityObj.name : 'your activity';
+      
+      // Find better times for the activity if needed
+      const betterTimes = findBetterTimes(weatherData, activityName);
+      setRecommendedTimes(betterTimes);
+      
+      // Get weather description for the selected time
+      const hourlyData = weatherData.hourly;
+      
+      // Get weather info from the hourly data
+      const weatherDesc = hourlyData.weather.description;
+      const temp = Math.round(hourlyData.temperature.day);
+      const rainChance = Math.round((hourlyData.pop || 0) * 100);
+      const wind = Math.round(hourlyData.windSpeed);
+      
+      // Create a prompt for Gemini API
+      const prompt = `You are Skylar, a weather assistant. A user is planning ${activityName} ${eventDescription ? `(${eventDescription})` : ''} 
+        on ${selectedDate} at ${selectedTime}. 
+        The weather forecast for that time is: ${temp}°C, ${weatherDesc}, ${rainChance}% chance of rain, wind speed of ${wind} km/h.
+        
+        Should they reschedule this event due to weather concerns? If yes, why?
+        If they should reschedule, suggest ${betterTimes.length > 0 ? 'one of these better times: ' + betterTimes.join(', ') : 'a better time window'}.
+        Keep your response conversational, under 4 sentences, and directly focused on whether this plan is a good idea considering the weather.`;
+      
+      // Call Gemini API for a recommendation
+      if (currentWeather) {
+        const response = await generateResponse(prompt, currentWeather);
+        setWeatherRecommendation(response.text);
+      } else {
+        setWeatherRecommendation(`Based on the forecast (${weatherDesc}, ${temp}°C, ${rainChance}% chance of rain), 
+          ${rainChance > 30 ? 'you might want to reschedule your ' + activityName : activityName + ' conditions look good'}. 
+          ${betterTimes.length > 0 ? 'Consider: ' + betterTimes[0] : ''}`);
+      }
+      
+      // Show the recommendation
+      setShowWeatherRecommendation(true);
+    } catch (error) {
+      console.error('Error analyzing weather:', error);
+      Alert.alert(
+        'Weather Analysis Error',
+        'Could not analyze weather data. Please try again later.'
+      );
+    } finally {
+      setIsLoadingRecommendation(false);
+    }
   };
 
   // Handle view details
@@ -708,6 +994,56 @@ const PlanningScreen = ({ navigation }: { navigation: any }) => {
           </TouchableWithoutFeedback>
         </Modal>
       </LinearGradient>
+      
+      {/* Weather Recommendation Modal */}
+      <Modal
+        visible={showWeatherRecommendation}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowWeatherRecommendation(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.weatherRecommendationModal}>
+            <View style={styles.weatherRecommendationHeader}>
+              <MaterialCommunityIcons name="weather-cloudy" size={adjust(24)} color="#4361EE" />
+              <Text style={styles.weatherRecommendationTitle}>Skylar's Recommendation</Text>
+              <TouchableOpacity onPress={() => setShowWeatherRecommendation(false)}>
+                <Ionicons name="close" size={adjust(24)} color="#333" />
+              </TouchableOpacity>
+            </View>
+            
+            {isLoadingRecommendation ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#4361EE" />
+                <Text style={styles.loadingText}>Analyzing weather conditions...</Text>
+              </View>
+            ) : (
+              <View style={styles.weatherRecommendationContent}>
+                <Text style={styles.weatherRecommendationText}>{weatherRecommendation}</Text>
+                
+                {recommendedTimes.length > 0 && (
+                  <View style={styles.betterTimesContainer}>
+                    <Text style={styles.betterTimesTitle}>Recommended Times:</Text>
+                    {recommendedTimes.map((time, index) => (
+                      <View key={index} style={styles.betterTimeItem}>
+                        <Ionicons name="checkmark-circle" size={adjust(16)} color="#4CAF50" />
+                        <Text style={styles.betterTimeText}>{time}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+            
+            <TouchableOpacity 
+              style={styles.closeRecommendationButton}
+              onPress={() => setShowWeatherRecommendation(false)}
+            >
+              <Text style={styles.closeRecommendationButtonText}>Got It</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1196,6 +1532,76 @@ const styles = StyleSheet.create({
     marginTop: adjust(15),
   },
   confirmEventButtonText: {
+    color: '#fff',
+    fontSize: adjust(13),
+    fontWeight: '600',
+  },
+  weatherRecommendationModal: {
+    backgroundColor: '#fff',
+    borderRadius: adjust(15),
+    padding: adjust(16),
+    width: '100%',
+    maxWidth: adjust(350),
+  },
+  weatherRecommendationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: adjust(15),
+    paddingBottom: adjust(10),
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  weatherRecommendationTitle: {
+    fontSize: adjust(15),
+    fontWeight: '600',
+    color: '#333',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#333',
+    fontSize: adjust(12),
+    marginTop: adjust(10),
+  },
+  weatherRecommendationContent: {
+    flex: 1,
+  },
+  weatherRecommendationText: {
+    color: '#333',
+    fontSize: adjust(13),
+    marginBottom: adjust(10),
+  },
+  betterTimesContainer: {
+    marginTop: adjust(10),
+  },
+  betterTimesTitle: {
+    fontSize: adjust(14),
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: adjust(10),
+  },
+  betterTimeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: adjust(5),
+  },
+  betterTimeText: {
+    color: '#333',
+    fontSize: adjust(12),
+    marginLeft: adjust(5),
+  },
+  closeRecommendationButton: {
+    backgroundColor: '#4361EE',
+    borderRadius: adjust(10),
+    paddingVertical: adjust(12),
+    alignItems: 'center',
+    marginTop: adjust(15),
+  },
+  closeRecommendationButtonText: {
     color: '#fff',
     fontSize: adjust(13),
     fontWeight: '600',

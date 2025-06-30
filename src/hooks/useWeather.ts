@@ -166,9 +166,13 @@ const useWeather = (props?: UseWeatherProps) => {
     
     const fetchData = async () => {
       if (city) {
+        console.log(`useWeather: Auto-fetching forecast for city: ${city}`);
         await fetchForecast(city);
       } else if (lat !== undefined && lon !== undefined) {
+        console.log(`useWeather: Auto-fetching by coordinates: ${lat},${lon}`);
         await fetchByCoordinates(lat, lon);
+      } else {
+        console.log(`useWeather: No city or coordinates provided, cannot auto-fetch`);
       }
     };
 

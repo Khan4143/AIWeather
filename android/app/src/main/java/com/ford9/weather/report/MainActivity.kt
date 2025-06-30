@@ -1,4 +1,4 @@
-package com.aiweatherapp
+package com.ford9.weather.report
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

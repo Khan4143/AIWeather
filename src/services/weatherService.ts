@@ -130,6 +130,7 @@ export const fetchCurrentWeather = async (
       query = `${cityName},${countryCode}`;
     }
 
+    console.log(`Fetching current weather for: ${query}`);
     const response = await fetch(
       `${BASE_URL}/weather?q=${query}&appid=${API_KEY}&units=${units}`
     );
@@ -140,6 +141,14 @@ export const fetchCurrentWeather = async (
     }
 
     const data = await response.json();
+    
+    // Log the weather condition for debugging
+    console.log('Weather condition received:', data.weather[0].main);
+    console.log('Weather description received:', data.weather[0].description);
+    console.log('Weather icon code received:', data.weather[0].icon);
+    
+    // Verify weather condition matches the description and icon
+    verifyWeatherCondition(data.weather[0]);
     
     // Map the API response to our WeatherData interface
     const weatherData: WeatherData = {
@@ -173,6 +182,45 @@ export const fetchCurrentWeather = async (
   }
 };
 
+// Helper function to verify weather condition matches the description and icon
+function verifyWeatherCondition(weatherData: { main: string, description: string, icon: string }) {
+  // Mappings based on OpenWeather API documentation
+  // https://openweathermap.org/weather-conditions
+  const conditionIconMap: { [key: string]: string[] } = {
+    'Clear': ['01d', '01n'],
+    'Clouds': ['02d', '02n', '03d', '03n', '04d', '04n'],
+    'Rain': ['09d', '09n', '10d', '10n'],
+    'Drizzle': ['09d', '09n'],
+    'Thunderstorm': ['11d', '11n'],
+    'Snow': ['13d', '13n'],
+    'Mist': ['50d', '50n'],
+    'Smoke': ['50d', '50n'],
+    'Haze': ['50d', '50n'],
+    'Dust': ['50d', '50n'],
+    'Fog': ['50d', '50n'],
+    'Sand': ['50d', '50n'],
+    'Ash': ['50d', '50n'],
+    'Squall': ['50d', '50n'],
+    'Tornado': ['50d', '50n'],
+  };
+
+  // Check if icon is valid for the main condition
+  const validIcons = conditionIconMap[weatherData.main] || [];
+  const isIconValid = validIcons.includes(weatherData.icon);
+  
+  console.log(`Weather condition validation:
+    - Main condition: ${weatherData.main}
+    - Description: ${weatherData.description}
+    - Icon code: ${weatherData.icon}
+    - Is icon valid for condition: ${isIconValid}
+  `);
+  
+  // If not valid, still use what we received but log the warning
+  if (!isIconValid) {
+    console.warn(`Warning: Icon code ${weatherData.icon} might not be appropriate for ${weatherData.main} condition`);
+  }
+}
+
 /**
  * Fetch weather forecast for a specific city
  * @param city - City name with country code e.g. "London, GB"
@@ -184,7 +232,7 @@ export const fetchWeatherForecast = async (
   units: 'metric' | 'imperial' | 'standard' = 'metric'
 ): Promise<ForecastData> => {
   try {
-    // First get current weather (this gives us city coordinates and current weather)
+    // First get the current weather
     const currentWeather = await fetchCurrentWeather(city, units);
     
     // Split city name from country code - expected format: "City, CountryCode"
@@ -195,8 +243,9 @@ export const fetchWeatherForecast = async (
     if (countryCode) {
       query = `${cityName},${countryCode}`;
     }
-    
-    // Use the 5-day/3-hour forecast API which is available in free tier
+
+    console.log(`Fetching forecast for: ${query}`);
+    // Get the 5 day / 3 hour forecast
     const response = await fetch(
       `${BASE_URL}/forecast?q=${query}&appid=${API_KEY}&units=${units}`
     );
@@ -207,13 +256,53 @@ export const fetchWeatherForecast = async (
     }
 
     const data = await response.json();
+
+    // Extract daily forecasts (noon time for each day)
+    // Note: API returns data in 3-hour intervals for 5 days
+    const seenDates = new Set<string>();
+    const dailyForecasts: any[] = [];
     
-    // The 5-day forecast API returns data in 3-hour increments
-    // Process it to get daily forecasts
-    const dailyForecasts = processForecastData(data.list);
+    // Helper to get date string (YYYY-MM-DD) from timestamp
+    const getDateString = (timestamp: number) => {
+      const date = new Date(timestamp * 1000);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    };
     
-    // Extract the next 24 hours of forecast data (first 8 entries, as each is 3 hours)
-    const hourlyForecasts = data.list.slice(0, 8);
+    // Find one forecast per day (we'll use the noon forecast if available)
+    data.list.forEach((item: any) => {
+      const dateStr = getDateString(item.dt);
+      if (!seenDates.has(dateStr)) {
+        seenDates.add(dateStr);
+        dailyForecasts.push(item);
+        
+        // Log daily forecast data for debugging
+        console.log(`Daily forecast for ${dateStr}:`, 
+          item.weather[0].main, 
+          item.weather[0].description, 
+          item.weather[0].icon
+        );
+        
+        // Verify weather condition
+        verifyWeatherCondition(item.weather[0]);
+      }
+    });
+
+    // Extract hourly forecasts for the next 24 hours
+    const hourlyForecasts = data.list.slice(0, 8); // Next 24 hours (3-hour intervals)
+    
+    // Log hourly forecast data for debugging
+    console.log('Hourly forecasts for the next 24 hours:');
+    hourlyForecasts.forEach((item: any, index: number) => {
+      const time = new Date(item.dt * 1000).toLocaleTimeString();
+      console.log(`Hour ${index} (${time}):`, 
+        item.weather[0].main, 
+        item.weather[0].description, 
+        item.weather[0].icon
+      );
+      
+      // Verify weather condition
+      verifyWeatherCondition(item.weather[0]);
+    });
     
     // Map the API response to our ForecastData interface
     const forecastData: ForecastData = {
@@ -319,29 +408,34 @@ function processForecastData(forecastList: any[]): any[] {
     dayMap.get(dayKey)?.push(item);
   });
   
-  // Get one forecast per day (noon or closest to noon)
+  // For each day, compute true min/max from all 3-hourly entries
   dayMap.forEach((items, day) => {
     // Sort by timestamp
     items.sort((a, b) => a.dt - b.dt);
-    
-    // Find forecast closest to noon
+    // Find forecast closest to noon for representative 'day' temp
     let closestToNoon = items[0];
     let minDiff = Number.MAX_SAFE_INTEGER;
-    
     items.forEach(item => {
       const date = new Date(item.dt * 1000);
       const hour = date.getHours();
       const diff = Math.abs(hour - 12);
-      
       if (diff < minDiff) {
         minDiff = diff;
         closestToNoon = item;
       }
     });
-    
+    // Compute true min/max for the day
+    let minTemp = items[0].main.temp_min;
+    let maxTemp = items[0].main.temp_max;
+    items.forEach(item => {
+      if (item.main.temp_min < minTemp) minTemp = item.main.temp_min;
+      if (item.main.temp_max > maxTemp) maxTemp = item.main.temp_max;
+    });
+    // Attach min/max to the representative forecast
+    closestToNoon.main.temp_min = minTemp;
+    closestToNoon.main.temp_max = maxTemp;
     dailyData.push(closestToNoon);
   });
-  
   // Sort by timestamp
   return dailyData.sort((a, b) => a.dt - b.dt);
 }
@@ -404,5 +498,7 @@ export const fetchWeatherByCoordinates = async (
 
 // Export weather icon URL helper
 export const getWeatherIconUrl = (iconCode: string): string => {
+  // Log icon code before generating URL
+  console.log('Generating icon URL for code:', iconCode);
   return `https://openweathermap.org/img/wn/${iconCode}@2x.png`;
 }; 

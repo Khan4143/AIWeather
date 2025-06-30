@@ -6,8 +6,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  Image,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   Keyboard,
@@ -18,16 +16,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
-import { generateResponse } from '../services/geminiService';
 import { useWeatherContext } from '../contexts/WeatherContext';
 import { UserData } from '../Screens/UserInfo';
-import { getApiKey, hasApiKey } from '../utils/apiKeys';
+import { generateResponse } from '../services/geminiService';
 
-// Define message types
 interface Message {
   id: string;
   text: string;
@@ -36,39 +31,24 @@ interface Message {
   loading?: boolean;
 }
 
-// Define predefined questions
 const predefinedQuestions = [
-  { id: '1', text: 'Check today\'s weather' },
+  { id: '1', text: "Check today's weather" },
   { id: '2', text: 'Will it rain today?' },
   { id: '3', text: 'Will it rain during my lunch break at 1 PM?' },
-  { id: '4', text: 'Set lunch reminder' },
-  { id: '5', text: 'Check evening forecast' },
-  { id: '6', text: 'What\'s the weather like this evening?' },
-  { id: '7', text: 'Weather for my commute?' },
-  { id: '8', text: 'Do I need an umbrella today?' },
+  { id: '4', text: 'Check evening forecast' },
+  { id: '5', text: "What's the weather like this evening?" },
+  { id: '6', text: 'Weather for my commute?' },
+  { id: '7', text: 'Do I need an umbrella today?' },
 ];
 
-// Define fallback responses for common weather questions
-const fallbackResponses: Record<string, string> = {
-  'default': "I can provide general weather information, but I don't have access to real-time data right now. Please try again later.",
-  'rain': "I can't check for rain data at the moment, but I recommend checking your local weather service.",
-  'temperature': "I'm not able to retrieve temperature data right now. Please try asking again later.",
-  'forecast': "I'm unable to access forecast information right now. Please check back soon.",
-  'today': "I can't retrieve today's weather information right now. Please try again later.",
-  'check today\'s weather': "I'm sorry, I can't access the current weather data. Please try again later or check your local weather service.",
-  'will it rain today': "I'm unable to check rain forecasts at the moment. Please try again later."
-};
-
 const CommuteScreen = () => {
-  // Access weather context to get current weather data
   const { currentWeather, forecast, preferredUnits } = useWeatherContext();
   const userLocation = UserData.location || 'your location';
-  
-  // Chat state
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: 'Hello! I\'m Skylar, your weather companion. How can I help you plan your day? ☀️',
+      text: "Hello! I'm Skylar, your weather companion. How can I help you plan your day? ☀️",
       sender: 'skylar',
       timestamp: new Date(),
     },
@@ -77,316 +57,127 @@ const CommuteScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const [showKeyboard, setShowKeyboard] = useState(false);
-  
-  // Toast notification state
+
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Track API failure count for fallback logic
-  const [apiFailureCount, setApiFailureCount] = useState<number>(0);
-
-  // Handle keyboard show/hide
   useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      'keyboardDidShow',
-      () => {
-        setShowKeyboard(true);
-        scrollToBottom();
-      }
-    );
-    const keyboardDidHideListener = Keyboard.addListener(
-      'keyboardDidHide',
-      () => {
-        setShowKeyboard(false);
-      }
-    );
-
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
+      setShowKeyboard(true);
+      scrollToBottom();
+    });
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setShowKeyboard(false);
+    });
     return () => {
       keyboardDidShowListener.remove();
       keyboardDidHideListener.remove();
     };
   }, []);
 
-  // Show toast notification
+  const scrollToBottom = () => {
+    if (scrollViewRef.current) {
+      scrollViewRef.current.scrollToEnd({ animated: true });
+    }
+  };
+
   const showToast = (message: string) => {
     setToastMessage(message);
     setToastVisible(true);
-    fadeAnim.setValue(0);
-    
-    // Fade in
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-    
-    // Auto hide after 3 seconds
-    setTimeout(() => {
-      // Fade out
+    Animated.sequence([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.delay(2000),
       Animated.timing(fadeAnim, {
         toValue: 0,
         duration: 300,
         useNativeDriver: true,
-      }).start(() => {
-        setToastVisible(false);
-      });
-    }, 3000);
+      }),
+    ]).start(() => {
+      setToastVisible(false);
+    });
   };
 
-  // Scroll to bottom of chat
-  const scrollToBottom = () => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
-  };
-
-  // Add message to chat
-  const addMessage = (text: string, sender: 'user' | 'skylar', isLoading = false) => {
-    const timestamp = new Date();
-    const uniqueId = `${sender}-${timestamp.getTime()}-${Math.random().toString(36).substring(2, 9)}`;
-    
-    const newMessage: Message = {
-      id: uniqueId,
-      text,
-      sender,
-      timestamp,
-      loading: isLoading,
-    };
-    
-    // Prevent duplicate error messages (don't add the same error message twice in a row)
-    if (text && text.includes("I'm having trouble") || text.includes("technical problem")) {
-      setMessages(prevMessages => {
-        // Check if the last message was an error message
-        const lastMessage = prevMessages[prevMessages.length - 1];
-        if (lastMessage && 
-            (lastMessage.text.includes("I'm having trouble") || 
-             lastMessage.text.includes("technical problem"))) {
-          // Don't add duplicate error message
-          return prevMessages;
-        }
-        return [...prevMessages, newMessage];
-      });
-    } else {
-      // Regular message, just add it
-      setMessages(prevMessages => [...prevMessages, newMessage]);
-    }
-    
-    // Auto scroll to bottom
-    setTimeout(() => {
-      scrollToBottom();
-    }, 100);
-    
-    return uniqueId;
-  };
-
-  // Update a message by its ID
-  const updateMessage = (messageId: string, text: string, isLoading = false) => {
-    setMessages((prevMessages) => 
-      prevMessages.map((msg) => 
-        msg.id === messageId 
-          ? { ...msg, text, loading: isLoading } 
-          : msg
-      )
-    );
-  };
-
-  // Get a fallback response based on the query
-  const getFallbackResponse = (query: string): string => {
-    // Convert to lowercase for easier matching
-    const lowerQuery = query.toLowerCase();
-    
-    // Check for specific keywords
-    if (lowerQuery.includes('rain')) {
-      return fallbackResponses['rain'];
-    } else if (lowerQuery.includes('temperature') || lowerQuery.includes('hot') || lowerQuery.includes('cold')) {
-      return fallbackResponses['temperature']; 
-    } else if (lowerQuery.includes('forecast')) {
-      return fallbackResponses['forecast'];
-    } else if (lowerQuery.includes('today')) {
-      return fallbackResponses['today'];
-    } else if (fallbackResponses[query]) {
-      return fallbackResponses[query];
-    }
-    
-    return fallbackResponses['default'];
-  };
-
-  // Handle send message
   const handleSendMessage = async () => {
-    if (inputText.trim() === '') return;
-    const userInput = inputText.trim();
-    
-    // Basic content validation
-    if (containsInvalidContent(userInput)) {
-      // Show error toast
-      showToast('Please avoid using inappropriate language or special commands.');
-      return;
-    }
-    
-    // Check if API key is available
-    if (!hasApiKey('gemini')) {
-      showToast('API key not configured. Please add your Gemini API key in settings.');
-      // Add a helpful message for the developer/user
-      addMessage("To use the chat feature, you need to add your Gemini API key. Please update the API key in src/utils/apiKeys.ts", 'skylar');
-      return;
-    }
-    
-    // Add user message
-    addMessage(userInput, 'user');
+    if (!inputText.trim() || isLoading) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: inputText.trim(),
+      sender: 'user',
+      timestamp: new Date(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
     setInputText('');
+    scrollToBottom();
+
+    // Add loading message
+    const loadingMessage: Message = {
+      id: 'loading',
+      text: '',
+      sender: 'skylar',
+      timestamp: new Date(),
+      loading: true,
+    };
+
+    setMessages(prev => [...prev, loadingMessage]);
     setIsLoading(true);
-    
-    // If we've had multiple API failures, use fallback responses
-    if (apiFailureCount >= 3) {
-      const fallbackResponse = getFallbackResponse(userInput);
-      setTimeout(() => {
-        addMessage(fallbackResponse, 'skylar');
-        setIsLoading(false);
-      }, 800);
-      return;
-    }
-    
-    // Show typing indicator
-    const loadingId = addMessage('', 'skylar', true);
-    
+
     try {
-      // Prepare weather context for the API
-      const weatherInfo = {
-        currentWeather: currentWeather,
-        forecast: forecast,
-        location: userLocation,
-        units: preferredUnits
-      };
+      // Generate response using Gemini API
+      const response = await generateResponse(userMessage.text, currentWeather || undefined);
+
+      // Remove loading message and add response
+      setMessages(prev => {
+        const filtered = prev.filter(msg => msg.id !== 'loading');
+        return [
+          ...filtered,
+          {
+            id: Date.now().toString(),
+            text: response.text,
+            sender: 'skylar',
+            timestamp: new Date(),
+          },
+        ];
+      });
+    } catch (error) {
+      console.error('Error generating response:', error);
+      showToast('Failed to get response. Please try again.');
       
-      // Get response from Gemini API
-      const response = await generateResponse(userInput, weatherInfo);
-      
-      // Update the message with the actual response
-      updateMessage(loadingId, response.text, false);
-      
-      // Reset API failure count on success
-      if (apiFailureCount > 0) {
-        setApiFailureCount(0);
-      }
-    } catch (error: any) {
-      console.error('Error getting response:', error);
-      
-      // Check if the error is related to missing API key
-      if (error.message?.includes('API key') || !hasApiKey('gemini')) {
-        updateMessage(
-          loadingId, 
-          "I can't connect because I need a valid Gemini API key. Please update the API key in src/utils/apiKeys.ts", 
-          false
-        );
-      } else {
-        updateMessage(
-          loadingId, 
-          "I'm sorry, I'm having trouble connecting to my weather brain. Please try again later.", 
-          false
-        );
-      }
-      
-      // Increment API failure count
-      setApiFailureCount(count => count + 1);
+      // Remove loading message
+      setMessages(prev => prev.filter(msg => msg.id !== 'loading'));
     } finally {
       setIsLoading(false);
+      scrollToBottom();
     }
   };
 
-  // Simple validation function to detect potentially invalid content
-  const containsInvalidContent = (text: string): boolean => {
-    // Convert to lowercase for easier comparison
-    const lowerText = text.toLowerCase();
-    
-    // List of offensive or invalid patterns to check
-    const invalidPatterns = [
-      // Offensive language patterns
-      /\b(f[*\s]?[u\*\s]c?k|sh[i\*\s]t|b[i\*\s]tch|d[i\*\s]ck|a[s\$\*]s|\bc[*\s]?u[*\s]?n[*\s]?t)\b/i,
-      // Command injection patterns
-      /\b(\/|\\|curl|wget|exec|eval|system|command|passthru|shell_exec)\b/i,
-      // SQL injection patterns
-      /\b(select\s+from|insert\s+into|update\s+set|delete\s+from|drop\s+table|union\s+select)\b/i
-    ];
-    
-    // Check if any pattern matches
-    return invalidPatterns.some(pattern => pattern.test(lowerText));
+  const handleQuestionSelect = (question: string) => {
+    setInputText(question);
+    // Automatically send the message after a short delay
+    setTimeout(() => {
+      handleSendMessage();
+    }, 100);
   };
 
-  // Handle predefined question selection
-  const handleQuestionSelect = async (question: string) => {
-    // Check if API key is available
-    if (!hasApiKey('gemini')) {
-      showToast('API key is not configured. Please check your settings.');
-      return;
-    }
-    
-    // Add user message
-    addMessage(question, 'user');
-    setIsLoading(true);
-    
-    // If we've had multiple API failures, use fallback responses
-    if (apiFailureCount >= 3) {
-      const fallbackResponse = getFallbackResponse(question);
-      setTimeout(() => {
-        addMessage(fallbackResponse, 'skylar');
-        setIsLoading(false);
-      }, 800);
-      return;
-    }
-    
-    // Show typing indicator
-    const loadingId = addMessage('', 'skylar', true);
-    
-    try {
-      // Prepare weather context for the API
-      const weatherInfo = {
-        currentWeather: currentWeather,
-        forecast: forecast,
-        location: userLocation,
-        units: preferredUnits
-      };
-      
-      // Get response from Gemini API for predefined question
-      const response = await generateResponse(question, weatherInfo);
-      
-      // Update the message with the actual response
-      updateMessage(loadingId, response.text, false);
-      
-      // Reset API failure count on success
-      if (apiFailureCount > 0) {
-        setApiFailureCount(0);
-      }
-    } catch (error: any) {
-      console.error('Error getting response for predefined question:', error);
-      updateMessage(loadingId, "I'm sorry, I'm having trouble connecting to my weather brain. Please try again later.", false);
-      
-      // Increment API failure count
-      setApiFailureCount(count => count + 1);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Render message loading state
   const renderMessageContent = (message: Message) => {
     if (message.loading) {
       return (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color={message.sender === 'user' ? '#fff' : '#4361EE'} />
-          <Text style={[
-            styles.loadingText,
-            message.sender === 'user' ? styles.userMessageText : styles.skylarMessageText
-          ]}>Thinking...</Text>
+          <Text style={[styles.loadingText, message.sender === 'user' ? styles.userMessageText : styles.skylarMessageText]}>
+            Thinking...
+          </Text>
         </View>
       );
     }
-    
     return (
-      <Text 
-        style={[
-          styles.messageText,
-          message.sender === 'user' ? styles.userMessageText : styles.skylarMessageText
-        ]}
-      >
+      <Text style={[styles.messageText, message.sender === 'user' ? styles.userMessageText : styles.skylarMessageText]}>
         {message.text}
       </Text>
     );
@@ -395,14 +186,8 @@ const CommuteScreen = () => {
   return (
     <>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
-      <LinearGradient
-        colors={['#b3d4ff', '#4361EE']}
-        style={styles.background}
-        start={{x: 0, y: 0}}
-        end={{x: 0, y: 1}}
-      >
+      <LinearGradient colors={['#b3d4ff', '#4361EE']} style={styles.background} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
         <SafeAreaView style={styles.safeArea} edges={['top']}>
-          {/* Header with different background */}
           <View style={styles.headerContainer}>
             <View style={styles.header}>
               <View style={styles.avatarContainer}>
@@ -415,22 +200,14 @@ const CommuteScreen = () => {
             </View>
             <View style={styles.headerDivider} />
           </View>
-          
-          {/* Chat messages */}
-          <ScrollView
-            ref={scrollViewRef}
-            style={styles.chatContainer}
-            contentContainerStyle={styles.chatContent}
-            showsVerticalScrollIndicator={false}
-          >
+
+          <ScrollView ref={scrollViewRef} style={styles.chatContainer} contentContainerStyle={styles.chatContent} showsVerticalScrollIndicator={false}>
             {messages.map((message) => (
-              <View 
-                key={`message-${message.id}`} 
+              <View
+                key={`message-${message.id}`}
                 style={[
-                  styles.messageBubble, 
-                  message.sender === 'user' 
-                    ? styles.userMessage 
-                    : styles.skylarMessage
+                  styles.messageBubble,
+                  message.sender === 'user' ? styles.userMessage : styles.skylarMessage,
                 ]}
               >
                 {message.sender === 'skylar' && (
@@ -438,12 +215,10 @@ const CommuteScreen = () => {
                     <Ionicons name="person" size={adjust(18)} color="#fff" />
                   </View>
                 )}
-                <View 
+                <View
                   style={[
                     styles.messageContent,
-                    message.sender === 'user' 
-                      ? styles.userMessageContent 
-                      : styles.skylarMessageContent
+                    message.sender === 'user' ? styles.userMessageContent : styles.skylarMessageContent,
                   ]}
                 >
                   {renderMessageContent(message)}
@@ -451,10 +226,9 @@ const CommuteScreen = () => {
               </View>
             ))}
           </ScrollView>
-          
-          {/* Predefined questions slider */}
+
           {!showKeyboard && (
-            <ScrollView 
+            <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.questionsOuterContainer}
@@ -464,16 +238,16 @@ const CommuteScreen = () => {
                 <TouchableOpacity
                   key={`question-${question.id}`}
                   style={[
-                    styles.questionButton, 
-                    index % 2 === 0 ? styles.questionButtonYellow : styles.questionButtonBlue
+                    styles.questionButton,
+                    index % 2 === 0 ? styles.questionButtonYellow : styles.questionButtonBlue,
                   ]}
                   onPress={() => handleQuestionSelect(question.text)}
                 >
-                  <Text 
+                  <Text
                     style={[
-                      styles.questionText, 
-                      index % 2 === 0 ? styles.questionTextYellow : styles.questionTextBlue
-                    ]} 
+                      styles.questionText,
+                      index % 2 === 0 ? styles.questionTextYellow : styles.questionTextBlue,
+                    ]}
                     numberOfLines={1}
                   >
                     {question.text}
@@ -482,8 +256,7 @@ const CommuteScreen = () => {
               ))}
             </ScrollView>
           )}
-          
-          {/* Input area */}
+
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={adjust(10)}
@@ -500,24 +273,14 @@ const CommuteScreen = () => {
                 returnKeyType="send"
                 onSubmitEditing={handleSendMessage}
               />
-              <TouchableOpacity 
-                style={styles.sendButton}
-                onPress={handleSendMessage}
-                disabled={isLoading}
-              >
+              <TouchableOpacity style={styles.sendButton} onPress={handleSendMessage} disabled={isLoading}>
                 <MaterialIcons name="send" size={adjust(20)} color="#fff" />
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
-          
-          {/* Toast notification for invalid input */}
+
           {toastVisible && (
-            <Animated.View 
-              style={[
-                styles.toast,
-                { opacity: fadeAnim }
-              ]}
-            >
+            <Animated.View style={[styles.toast, { opacity: fadeAnim }]}>
               <MaterialIcons name="error-outline" size={adjust(18)} color="#fff" />
               <Text style={styles.toastText}>{toastMessage}</Text>
             </Animated.View>

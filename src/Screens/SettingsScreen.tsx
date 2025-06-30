@@ -585,11 +585,11 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
         })
         .filter(name => name !== '');
       
-      // Log what we're saving for debugging
-      console.log('SETTINGS - Selected health concerns IDs:', JSON.stringify(selectedHealthConcerns));
-      console.log('SETTINGS - Health concerns being saved:', JSON.stringify(healthConcernNames));
-      console.log('SETTINGS - Selected activities IDs:', JSON.stringify(selectedActivities));
-      console.log('SETTINGS - Activities being saved:', JSON.stringify(activityNames));
+      // // Log what we're saving for debugging
+      // console.log('SETTINGS - Selected health concerns IDs:', JSON.stringify(selectedHealthConcerns));
+      // console.log('SETTINGS - Health concerns being saved:', JSON.stringify(healthConcernNames));
+      // console.log('SETTINGS - Selected activities IDs:', JSON.stringify(selectedActivities));
+      // console.log('SETTINGS - Activities being saved:', JSON.stringify(activityNames));
       
       // Create a NEW updated preferences object with a deep copy
       const updatedPreferences = {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -23,6 +23,8 @@ import { CommonActions } from '@react-navigation/native';
 import { useWeatherContext } from '../contexts/WeatherContext';
 import { UserData } from '../Screens/UserInfo';
 import { useFocusEffect } from '@react-navigation/native';
+import { generateResponse } from '../services/geminiService';
+import { PreferenceData } from '../Screens/PreferenceScreen';
 
 // Helper function to get the time of day greeting
 const getGreeting = () => {
@@ -77,43 +79,123 @@ const getWeatherIcon = (iconCode: string) => {
 const getWeatherIconMaterial = (iconCode: string) => {
   if (!iconCode) return 'weather-cloudy';
   
+  // Log the icon code for debugging
+  console.log('Weather icon code received:', iconCode);
+  
+  // Enhanced icon mapping with more accurate weather states
   const materialIconMap: {[key: string]: string} = {
+    // Clear sky
     '01d': 'weather-sunny', // clear sky day
     '01n': 'weather-night', // clear sky night
+    
+    // Few clouds (11-25%)
     '02d': 'weather-partly-cloudy', // few clouds day
     '02n': 'weather-night-partly-cloudy', // few clouds night
+    
+    // Scattered clouds (25-50%)
     '03d': 'weather-cloudy', // scattered clouds day
     '03n': 'weather-cloudy', // scattered clouds night
+    
+    // Broken/overcast clouds (51-100%)
     '04d': 'weather-cloudy', // broken clouds day
     '04n': 'weather-cloudy', // broken clouds night
+    
+    // Shower rain - intermittent intense rain
     '09d': 'weather-pouring', // shower rain day
     '09n': 'weather-pouring', // shower rain night
+    
+    // Rain - continuous precipitation
     '10d': 'weather-rainy', // rain day
     '10n': 'weather-rainy', // rain night
+    
+    // Thunderstorm
     '11d': 'weather-lightning', // thunderstorm day
     '11n': 'weather-lightning', // thunderstorm night
+    
+    // Snow
     '13d': 'weather-snowy', // snow day
     '13n': 'weather-snowy', // snow night
+    
+    // Mist/fog/haze
     '50d': 'weather-fog', // mist day
     '50n': 'weather-fog', // mist night
   };
   
-  // Default icon if we don't have a mapping
-  return materialIconMap[iconCode] || 'weather-cloudy';
+  // Get the mapped icon or fall back to cloudy
+  const iconName = materialIconMap[iconCode] || 'weather-cloudy';
+  console.log('Mapped to icon:', iconName);
+  return iconName;
 };
 
 // Helper to get appropriate icon color
 const getWeatherIconColor = (iconCode: string) => {
-  if (!iconCode) return '#87CEEB';
+  if (!iconCode) return '#87CEEB'; // Default sky blue
   
-  if (iconCode.startsWith('01')) return '#FFD700'; // sunny/clear - gold
-  if (iconCode.startsWith('02')) return '#87CEEB'; // partly cloudy - sky blue
-  if (iconCode.startsWith('03') || iconCode.startsWith('04')) return '#A9A9A9'; // cloudy - gray
-  if (iconCode.startsWith('09') || iconCode.startsWith('10')) return '#4169E1'; // rain - royal blue
-  if (iconCode.startsWith('11')) return '#9370DB'; // thunderstorm - purple
-  if (iconCode.startsWith('13')) return '#E0FFFF'; // snow - light cyan
-  if (iconCode.startsWith('50')) return '#708090'; // mist - slate gray
-  return '#87CEEB'; // default - sky blue
+  // Log the icon code for color selection
+  console.log('Selecting color for icon code:', iconCode);
+  
+  // Extract the condition code and day/night indicator
+  const conditionCode = iconCode.substring(0, 2);
+  const isDayTime = iconCode.endsWith('d');
+  
+  // More nuanced color mapping based on weather condition and time of day
+  switch(conditionCode) {
+    case '01': // clear sky
+      return isDayTime ? '#FFD700' : '#4A6FA5'; // gold for day, dark blue for night
+    
+    case '02': // few clouds
+      return isDayTime ? '#87CEEB' : '#4A6FA5'; // sky blue for day, dark blue for night
+    
+    case '03': // scattered clouds
+    case '04': // broken clouds
+      return isDayTime ? '#A9A9A9' : '#6C757D'; // gray for day, darker gray for night
+    
+    case '09': // shower rain
+      return isDayTime ? '#4169E1' : '#364FC7'; // royal blue for day, darker blue for night
+    
+    case '10': // rain
+      return isDayTime ? '#4682B4' : '#0D47A1'; // steel blue for day, navy for night
+    
+    case '11': // thunderstorm
+      return isDayTime ? '#9370DB' : '#6A0DAD'; // medium purple for day, darker purple for night
+    
+    case '13': // snow
+      return isDayTime ? '#E0FFFF' : '#B0E0E6'; // light cyan for day, powder blue for night
+    
+    case '50': // mist/fog
+      return isDayTime ? '#708090' : '#556677'; // slate gray for day, darker slate for night
+  }
+  
+  // Default fallback
+  return isDayTime ? '#87CEEB' : '#4A6FA5'; // sky blue for day, dark blue for night
+};
+
+// Helper to map keywords to a small set of general icons for health tips
+const getHealthTipIcon = (tip: string) => {
+  const lower = tip.toLowerCase();
+  if (lower.includes('hydration') || lower.includes('hydrated') || lower.includes('water')) return <Ionicons name="water-outline" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('clothing') || lower.includes('shirt') || lower.includes('t-shirt') || lower.includes('layers') || lower.includes('breathable')) return <MaterialCommunityIcons name="tshirt-crew" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('sunscreen') || lower.includes('screen') || lower.includes('uv') || lower.includes('spf') || lower.includes('sun protection') || lower.includes('sunglass')) return <MaterialCommunityIcons name="sunglasses" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('shoes') || lower.includes('footwear') || lower.includes('supportive')) return <MaterialCommunityIcons name="shoe-sneaker" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('shade') || lower.includes('sun') || lower.includes('color') || lower.includes('light color') || lower.includes('reflect')) return <MaterialCommunityIcons name="weather-sunny" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('medication') || lower.includes('medicine')) return <MaterialCommunityIcons name="medical-bag" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('heart') || lower.includes('monitor') || lower.includes('blood pressure') || lower.includes('activity')) return <MaterialCommunityIcons name="heart-pulse" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  // Fallback: t-shirt for general health, heart for medical/monitoring
+  if (lower.includes('health') || lower.includes('well-being') || lower.includes('wellbeing')) return <MaterialCommunityIcons name="heart-pulse" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  return <MaterialCommunityIcons name="tshirt-crew" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+};
+
+// Helper to map keywords to a small set of general icons for outfit tips
+const getOutfitTipIcon = (tip: string) => {
+  const lower = tip.toLowerCase();
+  if (lower.includes('t-shirt') || lower.includes('shirt') || lower.includes('clothing') || lower.includes('layers') || lower.includes('breathable')) return <MaterialCommunityIcons name="tshirt-crew" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('sunglass') || lower.includes('uv') || lower.includes('sun protection') || lower.includes('spf') || lower.includes('sunscreen') || lower.includes('screen')) return <MaterialCommunityIcons name="sunglasses" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('shoes') || lower.includes('sneaker') || lower.includes('footwear') || lower.includes('supportive')) return <MaterialCommunityIcons name="shoe-sneaker" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('sun') || lower.includes('color') || lower.includes('light color') || lower.includes('reflect')) return <MaterialCommunityIcons name="weather-sunny" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('hat')) return <MaterialCommunityIcons name="hat-fedora" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  if (lower.includes('jeans') || lower.includes('chinos') || lower.includes('pants')) return <MaterialCommunityIcons name="pants" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
+  // Fallback: t-shirt for general outfit
+  return <MaterialCommunityIcons name="tshirt-crew" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
 };
 
 const HomeScreen = ({ navigation }: { navigation: any }) => {
@@ -130,9 +212,43 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     forceRefresh 
   } = useWeatherContext();
   const [userName, setUserName] = useState('');
+  const [outfitLoading, setOutfitLoading] = useState(false);
+  const [outfitGemini, setOutfitGemini] = useState<string | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthGemini, setHealthGemini] = useState<string | null>(null);
+  const [outfitCardLoading, setOutfitCardLoading] = useState(false);
+  const [outfitCardText, setOutfitCardText] = useState<string>('Skylar\'s picked today\'s best casual look for cool weather');
+  const [healthCardLoading, setHealthCardLoading] = useState(false);
+  const [healthCardText, setHealthCardText] = useState<string>('High pollen count today\nStrong UV rays 1-4 PM');
+
+  // Cache for outfit and health card text to avoid unnecessary API calls
+  const [lastOutfitUpdate, setLastOutfitUpdate] = useState(0);
+  const [lastHealthUpdate, setLastHealthUpdate] = useState(0);
+  
+  // Refs should be at the top level of the component, not inside hooks or callbacks
+  const lastVisitTimeRef = React.useRef<number>(Date.now());
+  const lastUpdateRef = React.useRef<number>(0);
+  
+  const oneHourMs = 60 * 60 * 1000;
+  const twoHoursMs = 2 * 60 * 60 * 1000;
 
   // Get temperature unit symbol
   const tempUnit = preferredUnits === 'imperial' ? 'F' : 'C';
+
+  // Get user health concerns for personalized health tips
+  const userHealthConcerns = PreferenceData?.healthConcerns || [];
+
+  // Compute a weather signature to detect changes
+  const weatherSignature = useMemo(() => {
+    if (!currentWeather) return '';
+    return [
+      currentWeather.location,
+      currentWeather.temperature,
+      currentWeather.description,
+      currentWeather.humidity,
+      currentWeather.windSpeed
+    ].join('|');
+  }, [currentWeather]);
 
   // Fetch weather data when the screen mounts or on location change
   useEffect(() => {
@@ -144,15 +260,22 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     setUserName(UserData.gender === 'female' ? 'Sarah' : UserData.gender === 'male' ? 'Michael' : 'User');
   }, [UserData.location]);
 
-  // Use useFocusEffect to detect when the HomeScreen is focused
+  // Use useFocusEffect to detect when the HomeScreen is focused - but don't force refresh every time
   useFocusEffect(
     React.useCallback(() => {
       console.log("HomeScreen - Screen focused");
-      // Force refresh weather data when returning to this screen
-      if (UserData.location) {
-        console.log("HomeScreen - Refreshing weather on focus for:", UserData.location);
+      // Only force refresh if we've been away for a while (more than 10 minutes)
+      const now = Date.now();
+      const tenMinutes = 10 * 60 * 1000;
+      
+      if (now - lastVisitTimeRef.current > tenMinutes && UserData.location) {
+        console.log("HomeScreen - More than 10 minutes since last focus, refreshing data");
         forceRefresh();
+      } else {
+        console.log("HomeScreen - Recent visit, no need to refresh");
       }
+      
+      lastVisitTimeRef.current = now;
       
       return () => {
         // Cleanup function that runs when the screen is unfocused
@@ -160,6 +283,113 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
       };
     }, [forceRefresh])
   );
+
+  // Fetch concise Gemini responses for card summaries - with rate limiting
+  useEffect(() => {
+    const fetchOutfitCard = async () => {
+      if (currentWeather) {
+        const now = Date.now();
+        // Only update if we haven't updated in the last hour or weather has changed significantly
+        if (now - lastOutfitUpdate > oneHourMs || !outfitCardText || outfitCardText.includes('Unable to fetch')) {
+        setOutfitCardLoading(true);
+        try {
+          const res = await generateResponse(
+            'In 2 short lines maximum, what is the best outfit for today based on the weather? No greetings, no extra details, just direct and relevant advice.',
+            currentWeather
+          );
+          // Only show the first 2 lines, trimmed
+          const lines = res.text.trim().split(/\r?\n/).filter(Boolean);
+          setOutfitCardText(lines.slice(0, 2).join(' '));
+            setLastOutfitUpdate(now);
+        } catch {
+          setOutfitCardText('Unable to fetch outfit suggestion.');
+        } finally {
+          setOutfitCardLoading(false);
+          }
+        } else {
+          console.log("HomeScreen - Skipping outfit card update, using cached data");
+        }
+      }
+    };
+    const fetchHealthCard = async () => {
+      if (currentWeather) {
+        const now = Date.now();
+        // Only update if we haven't updated in the last hour or weather has changed significantly
+        if (now - lastHealthUpdate > oneHourMs || !healthCardText || healthCardText.includes('Unable to fetch')) {
+        setHealthCardLoading(true);
+        try {
+          const res = await generateResponse(
+            'In 2 short lines maximum, what are the most important health alerts or tips for today based on the weather? No greetings, no extra details, just direct and relevant advice.',
+            currentWeather
+          );
+          // Only show the first 2 lines, trimmed
+          const lines = res.text.trim().split(/\r?\n/).filter(Boolean);
+          setHealthCardText(lines.slice(0, 2).join(' '));
+            setLastHealthUpdate(now);
+        } catch {
+          setHealthCardText('Unable to fetch health alerts.');
+        } finally {
+          setHealthCardLoading(false);
+          }
+        } else {
+          console.log("HomeScreen - Skipping health card update, using cached data");
+        }
+      }
+    };
+    fetchOutfitCard();
+    fetchHealthCard();
+  }, [currentWeather?.temperature, currentWeather?.description, currentWeather?.humidity]);
+
+  // Fetch Gemini responses only when weather changes
+  useEffect(() => {
+    if (!currentWeather) return;
+    let cancelled = false;
+
+    // Define a threshold for when we should refresh the data
+    const now = Date.now();
+    
+    // Only fetch new data if it's been more than 2 hours or we don't have data yet
+    if (now - lastUpdateRef.current > twoHoursMs || !outfitGemini || !healthGemini) {
+      lastUpdateRef.current = now;
+      
+    const fetchOutfit = async () => {
+      setOutfitLoading(true);
+      try {
+        const res = await generateResponse(
+          'List 5 concise, separate clothing style tips for today based on the weather. Do NOT mention weather data, location, temperature, or greetings. Each tip should be a separate line, direct and relevant.',
+          currentWeather
+        );
+        if (!cancelled) setOutfitGemini(res.text);
+      } catch {
+        if (!cancelled) setOutfitGemini('Unable to fetch outfit suggestions.');
+      } finally {
+        if (!cancelled) setOutfitLoading(false);
+      }
+    };
+    const fetchHealth = async () => {
+      setHealthLoading(true);
+      try {
+        const concernText = userHealthConcerns.length > 0 ? `User health concerns: ${userHealthConcerns.join(', ')}. ` : '';
+        const res = await generateResponse(
+          `${concernText}List 5 concise, separate health tips for today based on the weather. Do NOT mention weather data, location, temperature, or greetings. Each tip should be a separate line, direct and relevant.`,
+          currentWeather
+        );
+        if (!cancelled) setHealthGemini(res.text);
+      } catch {
+        if (!cancelled) setHealthGemini('Unable to fetch health tips.');
+      } finally {
+        if (!cancelled) setHealthLoading(false);
+      }
+    };
+    setOutfitGemini(null);
+    setHealthGemini(null);
+    fetchOutfit();
+    fetchHealth();
+    } else {
+      console.log("HomeScreen - Skipping detailed tips update, using cached data");
+    }
+    return () => { cancelled = true; };
+  }, [weatherSignature]);
 
   // Navigation handlers
   const handleSeeMoreDetails = () => {
@@ -190,7 +420,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   const renderModalContent = () => {
     switch (activeModal) {
       case 'details':
-        return (
+    return (
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <MaterialCommunityIcons name="weather-windy" size={adjust(22)} color="#4361EE" />
@@ -202,19 +432,19 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
             <View style={styles.modalContent}>
               <Text style={styles.modalText}>
                 Current temperature is {currentWeather?.temperature.toFixed(1)}°{currentWeather?.windSpeed ? ` with ${currentWeather?.windSpeed < 10 ? 'light' : 'strong'} wind (${currentWeather?.windSpeed.toFixed(1)}mph)` : ''}
-              </Text>
+        </Text>
               <View style={styles.modalItem}>
                 <Feather name="droplet" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
                 <Text style={styles.modalItemText}>Humidity: {currentWeather?.humidity || 65}%</Text>
-              </View>
+          </View>
               <View style={styles.modalItem}>
                 <Feather name="thermometer" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
                 <Text style={styles.modalItemText}>Feels like: {currentWeather?.feelsLike.toFixed(1) || 74}°</Text>
-              </View>
+          </View>
               <View style={styles.modalItem}>
                 <MaterialCommunityIcons name="weather-sunset-up" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
                 <Text style={styles.modalItemText}>Sunrise: {currentWeather?.sunrise ? formatTime(currentWeather.sunrise) : '6:24 AM'}</Text>
-              </View>
+        </View>
               <View style={styles.modalItem}>
                 <MaterialCommunityIcons name="weather-sunset-down" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
                 <Text style={styles.modalItemText}>Sunset: {currentWeather?.sunset ? formatTime(currentWeather.sunset) : '8:15 PM'}</Text>
@@ -233,23 +463,24 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               </TouchableOpacity>
             </View>
             <View style={styles.modalContent}>
-              <Text style={styles.modalText}>Recommended outfit for today:</Text>
-              <View style={styles.modalItem}>
-                <MaterialCommunityIcons name="tshirt-crew" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
-                <Text style={styles.modalItemText}>Light cotton t-shirt</Text>
-              </View>
-              <View style={styles.modalItem}>
-                <MaterialCommunityIcons name="pants" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
-                <Text style={styles.modalItemText}>Casual jeans or chinos</Text>
-              </View>
-              <View style={styles.modalItem}>
-                <MaterialCommunityIcons name="shoe-sneaker" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
-                <Text style={styles.modalItemText}>Running shoes for comfort</Text>
-              </View>
-              <View style={styles.modalItem}>
-                <MaterialCommunityIcons name="glasses" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
-                <Text style={styles.modalItemText}>Sunglasses for UV protection</Text>
-              </View>
+              {outfitLoading ? (
+                <ActivityIndicator size="small" color="#4361EE" />
+              ) : (
+                outfitGemini ? (
+                  outfitGemini.split(/[.\n\r]+/).filter(Boolean).slice(0,5).map((tip, idx) => {
+                    // Remove leading *, -, or whitespace
+                    const cleanTip = tip.replace(/^\s*[*-]\s*/, '').trim();
+                    return (
+                      <View key={idx} style={styles.modalItem}>
+                        {getOutfitTipIcon(cleanTip)}
+                        <Text style={styles.modalItemText}>{cleanTip}</Text>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={styles.modalText}>No suggestion available.</Text>
+                )
+              )}
             </View>
           </View>
         );
@@ -268,22 +499,22 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               <View style={styles.modalItem}>
                 <Ionicons name="time-outline" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
                 <Text style={styles.modalItemText}>Reschedule soccer to 7:00 PM</Text>
-              </View>
+          </View>
               <View style={styles.modalItem}>
                 <Ionicons name="sunny-outline" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
                 <Text style={styles.modalItemText}>Best time for outdoor run: 8:00 AM</Text>
-              </View>
+          </View>
               <View style={styles.modalItem}>
                 <MaterialCommunityIcons name="umbrella" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
                 <Text style={styles.modalItemText}>Bring umbrella between 6-7 PM</Text>
-              </View>
+          </View>
               <View style={styles.modalItem}>
                 <MaterialCommunityIcons name="shield-sun" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
                 <Text style={styles.modalItemText}>Apply sunscreen before 10 AM run</Text>
-              </View>
-            </View>
           </View>
-        );
+        </View>
+      </View>
+    );
       case 'health':
         return (
           <View style={styles.modalCard}>
@@ -295,23 +526,24 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               </TouchableOpacity>
             </View>
             <View style={styles.modalContent}>
-              <Text style={styles.modalText}>Health recommendations for today:</Text>
-              <View style={styles.modalItem}>
-                <MaterialCommunityIcons name="flower" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
-                <Text style={styles.modalItemText}>Use allergy medication before going outside</Text>
-              </View>
-              <View style={styles.modalItem}>
-                <Ionicons name="water-outline" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
-                <Text style={styles.modalItemText}>Stay hydrated: aim for 3L of water today</Text>
-              </View>
-              <View style={styles.modalItem}>
-                <MaterialCommunityIcons name="sunglasses" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
-                <Text style={styles.modalItemText}>Wear UV-blocking sunglasses when outside</Text>
-              </View>
-              <View style={styles.modalItem}>
-                <MaterialCommunityIcons name="hat-fedora" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />
-                <Text style={styles.modalItemText}>Use a hat for additional sun protection</Text>
-              </View>
+              {healthLoading ? (
+                <ActivityIndicator size="small" color="#4361EE" />
+              ) : (
+                healthGemini ? (
+                  healthGemini.split(/[.\n\r]+/).filter(Boolean).slice(0,5).map((tip, idx) => {
+                    // Remove leading *, -, or whitespace
+                    const cleanTip = tip.replace(/^\s*[*-]\s*/, '').trim();
+                    return (
+                      <View key={idx} style={styles.modalItem}>
+                        {getHealthTipIcon(cleanTip)}
+                        <Text style={styles.modalItemText}>{cleanTip}</Text>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={styles.modalText}>No health tips available.</Text>
+                )
+              )}
             </View>
           </View>
         );
@@ -355,9 +587,9 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
           style={[styles.background, styles.centerContent]}
         >
           <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.loadingText}>Loading weather data...</Text>
+            <Text style={styles.loadingText}>Loading weather data...</Text>
         </LinearGradient>
-      </SafeAreaView>
+        </SafeAreaView>
     );
   }
 
@@ -402,7 +634,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
           contentContainerStyle={styles.scrollContainer}
         >
           {/* Header with greeting */}
-          <View style={styles.header}>
+        <View style={styles.header}>
             <View>
               <Text style={styles.greeting}>{getGreeting()}, {userName}!</Text>
               <Text style={styles.subGreeting}>{currentWeather?.description ? currentWeather.description : "Loading weather..."}</Text>
@@ -425,9 +657,9 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                 ) : (
                   <MaterialCommunityIcons name="weather-partly-cloudy" size={adjust(28)} color="#A9A9A9" />
                 )}
-              </View>
-            </View>
-            
+          </View>
+        </View>
+
             {/* High/Low temperature */}
             <View style={styles.tempMinMax}>
               <Text style={styles.tempRangeText}>Hi {getMinMaxTemps().high}° Lo {getMinMaxTemps().low}°</Text>
@@ -435,9 +667,9 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
 
             {/* Hourly forecast */}
             {forecast && forecast.hourly && forecast.hourly.length > 0 ? (
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.hourlyForecastScroll}
               >
                 {forecast.hourly.map((hour, index) => {
@@ -487,7 +719,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                 </Text>
               </View>
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.detailsButton}
               onPress={handleSeeMoreDetails}
             >
@@ -501,9 +733,11 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               <Ionicons name="shirt-outline" size={adjust(18)} color="#4361EE" />
               <Text style={styles.cardTitle}>Today's Outfit</Text>
             </View>
-            <Text style={styles.outfitText}>
-              Skylar's picked today's best casual look for cool weather
-            </Text>
+            {outfitCardLoading ? (
+              <ActivityIndicator size="small" color="#4361EE" />
+            ) : (
+              <Text style={styles.outfitText}>{outfitCardText}</Text>
+            )}
             <TouchableOpacity 
               style={styles.outfitButton}
               onPress={handleViewStyles}
@@ -518,59 +752,29 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               <FontAwesome5 name="running" size={adjust(18)} color="#4361EE" />
               <Text style={styles.cardTitle}>Routine Suggestion</Text>
             </View>
-            <Text style={styles.routineText}>
-              Evening soccer at 5 PM might see rain. Skylar recommends indoor practice or delaying to 7 PM.
-            </Text>
+            <Text style={styles.routineText}>{healthCardText}</Text>
             <TouchableOpacity 
               style={styles.routineButton}
-              onPress={handleAdjustSchedule}
-            >
-              <Text style={styles.routineButtonText}>Adjust Schedule</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Health Alert Card */}
-          <View style={styles.healthCard}>
-            <View style={styles.cardHeader}>
-              <MaterialCommunityIcons name="alert-circle-outline" size={adjust(18)} color="#4361EE" />
-              <Text style={styles.cardTitle}>Health Alert</Text>
-            </View>
-            <View style={styles.healthAlerts}>
-              <View style={styles.healthAlert}>
-                <Ionicons name="arrow-forward" size={adjust(12)} color="#4361EE" />
-                <Text style={styles.healthAlertText}>High pollen count today</Text>
-              </View>
-              <View style={styles.healthAlert}>
-                <Ionicons name="sunny-outline" size={adjust(12)} color="#4361EE" />
-                <Text style={styles.healthAlertText}>Strong UV rays 1-4 PM</Text>
-              </View>
-            </View>
-            <TouchableOpacity 
-              style={styles.healthButton}
               onPress={handleHealthTips}
             >
-              <Text style={styles.healthButtonText}>More Health Tips</Text>
-            </TouchableOpacity>
+              <Text style={styles.routineButtonText}>View Health Tips</Text>
+              </TouchableOpacity>
           </View>
         </ScrollView>
-
-        {/* Modal for popup cards */}
+      </LinearGradient>
+      {modalVisible && (
         <Modal
+          visible={modalVisible}
           animationType="fade"
           transparent={true}
-          visible={modalVisible}
           onRequestClose={closeModal}
         >
-          <TouchableWithoutFeedback onPress={closeModal}>
-            <View style={styles.modalOverlay}>
-              <TouchableWithoutFeedback onPress={e => e.stopPropagation()}>
-                {renderModalContent()}
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
+          <View style={styles.modalOverlay}>
+            {renderModalContent()}
+          </View>
         </Modal>
-      </LinearGradient>
-    </SafeAreaView>
+      )}
+      </SafeAreaView>
   );
 };
 
@@ -795,44 +999,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  healthCard: {
-    backgroundColor: '#fff',
-    borderRadius: adjust(15),
-    padding: adjust(14),
-    marginBottom: adjust(14),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  healthAlerts: {
-    marginBottom: adjust(12),
-  },
-  healthAlert: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: adjust(6),
-  },
-  healthAlertText: {
-    fontSize: adjust(12),
-    color: '#666',
-    marginLeft: adjust(8),
-  },
-  healthButton: {
-    backgroundColor: '#f9d057',
-    borderRadius: adjust(10),
-    paddingVertical: adjust(10),
-    paddingHorizontal: adjust(22),
-    alignSelf: 'center',
-    width: '80%',
-  },
-  healthButtonText: {
-    fontSize: adjust(12),
-    color: '#333',
-    fontWeight: '600',
-    textAlign: 'center',
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -888,8 +1054,14 @@ const styles = StyleSheet.create({
     marginRight: adjust(10),
   },
   modalItemText: {
-    fontSize: adjust(13),
+    flex: 1,
     color: '#333',
+    fontSize: adjust(14),
+    marginLeft: adjust(10),
+    marginRight: adjust(10),
+    textAlign: 'left',
+    paddingVertical: adjust(4),
+    paddingRight: adjust(8),
   },
 });
 

@@ -14,6 +14,7 @@ import HomeScreen from '../Screens/HomeScreen'
 import TabNavigator from './TabNavigator'
 import PlanningScreen from '../Screens/PlanningScreen'
 import SettingsScreen from '../Screens/SettingsScreen'
+import ForecastScreen from '../Screens/ForecastScreen'
 
 const Navigations = () => {
   const Stack = createNativeStackNavigator()
@@ -69,6 +70,7 @@ const Navigations = () => {
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="PlanningScreen" component={PlanningScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
+        <Stack.Screen name="Forecast" component={ForecastScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   )

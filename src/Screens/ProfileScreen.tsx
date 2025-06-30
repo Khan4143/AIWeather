@@ -400,28 +400,28 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
             <Text style={styles.sectionTitle}>Your Information</Text>
             <View style={styles.userInfoContainer}>
               {/* Age */}
-              <TouchableOpacity style={styles.infoCard}>
+              <View style={styles.infoCard}>
                 <Text style={styles.infoLabel}>Age</Text>
                 <Text style={styles.infoValue}>{userAge || 'Not set'}</Text>
-              </TouchableOpacity>
+              </View>
 
               {/* Gender */}
-              <TouchableOpacity style={styles.infoCard}>
+              <View style={styles.infoCard}>
                 <Text style={styles.infoLabel}>Gender</Text>
                 <Text style={styles.infoValue}>{userGender ? userGender.charAt(0).toUpperCase() + userGender.slice(1) : 'Not set'}</Text>
-              </TouchableOpacity>
+              </View>
 
               {/* Occupation */}
-              <TouchableOpacity style={styles.infoCard}>
-                <Text style={styles.infoLabel}>Occupation</Text>
+              <View style={styles.infoCard}>
+                 <Text style={styles.infoLabel}>Occupation</Text>
                 <Text style={styles.infoValue}>{userOccupation || 'Not set'}</Text>
-              </TouchableOpacity>
+              </View>
 
               {/* Location */}
-              <TouchableOpacity style={styles.infoCard}>
+              <View style={styles.infoCard}>
                 <Text style={styles.infoLabel}>Location</Text>
                 <Text style={styles.infoValue}>{userLocation || 'Not set'}</Text>
-              </TouchableOpacity>
+              </View>
             </View>
 
             {/* Your Routine Preferences */}
@@ -474,18 +474,18 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
                 </View>
 
                 {/* Transport Type */}
-                <TouchableOpacity style={styles.preferencesRow}>
+                <View style={styles.preferencesRow}>
                   <Text style={styles.preferenceLabel}>Transport Type</Text>
                   <View style={styles.preferenceValue}>
                     <Text style={styles.preferenceValueText}>
                       {userCommuteMethod ? userCommuteMethod.charAt(0).toUpperCase() + userCommuteMethod.slice(1) : 'Not set'}
                     </Text>
-                    <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" />
+                    {/* <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" /> */}
                   </View>
-                </TouchableOpacity>
+                </View>
 
                 {/* Departure Time */}
-                <TouchableOpacity style={[styles.preferencesRow, {borderBottomWidth: 0, paddingBottom: 0}]}>
+                <View style={[styles.preferencesRow, {borderBottomWidth: 0, paddingBottom: 0}]}>
                   <Text style={styles.preferenceLabel}>Departure Time</Text>
                   <View style={styles.preferenceValue}>
                     <Text style={styles.preferenceValueText}>
@@ -493,9 +493,9 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
                         `${userCommuteTime.hours}:${userCommuteTime.minutes.toString().padStart(2, '0')} ${userCommuteTime.isAM ? 'AM' : 'PM'}` 
                         : '8:30 AM'}
                     </Text>
-                    <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" />
+                    {/* <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" /> */}
                   </View>
-                </TouchableOpacity>
+                </View>
               </View>
             </View>
 
@@ -576,10 +576,10 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
               Skylar only alerts you when it matters — not too often
             </Text>
 
-            {/* Customize Timing Button */}
+            {/* Customize Timing Button
             <TouchableOpacity style={styles.customizeButton}>
               <Text style={styles.customizeButtonText}>Customize Timing</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
 
             {/* Skylar's Forecast History */}
             <Text style={styles.sectionTitle}>Skylar's Forecast History</Text>
@@ -625,25 +625,25 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
             {/* Preference cards grid */}
             <View style={styles.preferencesGrid}>
               {/* Location */}
-              <TouchableOpacity style={styles.preferenceCard}>
+              <View style={styles.preferenceCard}>
                 <View style={styles.preferenceIconContainer}>
                   <Ionicons name="location-outline" size={adjust(20)} color="#4361EE" />
                 </View>
                 <Text style={styles.preferenceCardTitle}>Location</Text>
                 <Text style={styles.preferenceCardValue}>{userLocation || 'New York'}</Text>
-              </TouchableOpacity>
+              </View>
 
               {/* Outfit Style */}
-              <TouchableOpacity style={styles.preferenceCard}>
+              <View style={styles.preferenceCard}>
                 <View style={styles.preferenceIconContainer}>
                   <MaterialIcons name="checkroom" size={adjust(20)} color="#4361EE" />
                 </View>
                 <Text style={styles.preferenceCardTitle}>Outfit Style</Text>
                 <Text style={styles.preferenceCardValue}>{getStyleDisplayName(stylePreference)}</Text>
-              </TouchableOpacity>
+              </View>
 
               {/* Health Tags */}
-              <TouchableOpacity style={styles.preferenceCard}>
+              <View style={styles.preferenceCard}>
                 <View style={styles.preferenceIconContainer}>
                   <MaterialIcons name="favorite-outline" size={adjust(20)} color="#4361EE" />
                 </View>
@@ -651,16 +651,16 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
                 <Text style={styles.preferenceCardValue}>
                   {healthConcerns.length > 0 ? `${healthConcerns.length} Active` : 'None'}
                 </Text>
-              </TouchableOpacity>
+              </View>
 
               {/* App Settings */}
-              <TouchableOpacity style={styles.preferenceCard}>
+              <View style={styles.preferenceCard}>
                 <View style={styles.preferenceIconContainer}>
                   <Ionicons name="settings-outline" size={adjust(20)} color="#4361EE" />
                 </View>
                 <Text style={styles.preferenceCardTitle}>App Settings</Text>
                 <Text style={styles.preferenceCardValue}>{temperatureUnit}, {languagePreference}</Text>
-              </TouchableOpacity>
+              </View>
             </View>
 
             {/* Your Style & Health */}
@@ -674,7 +674,7 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
                   <Text style={styles.preferenceValueText}>
                     {getStyleDisplayName(stylePreference)}
                   </Text>
-                  <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" />
+                  {/* <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" /> */}
                 </View>
               </View>
               
@@ -930,7 +930,7 @@ const styles = StyleSheet.create({
   },
   preferenceValueText: {
     fontSize: adjust(14),
-    color: '#4361EE',
+    color: '#808080',
     marginRight: adjust(4),
   },
   notificationBox: {

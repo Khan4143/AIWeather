@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -8,11 +8,21 @@ import HomeScreen from '../Screens/HomeScreen';
 import PlanningScreen from '../Screens/PlanningScreen';
 import CommuteScreen from '../Screens/CommuteScreen';
 import ProfileScreen from '../Screens/ProfileScreen';
+import ForecastScreen from '../Screens/ForecastScreen';
 import adjust from '../utils/adjust';
 
 const Tab = createBottomTabNavigator();
 
 const TabNavigator = () => {
+  // Log when TabNavigator mounts
+  useEffect(() => {
+    console.log('TabNavigator mounted - Initial screen is ForecastScreen (HomeTab)');
+    
+    return () => {
+      console.log('TabNavigator unmounted');
+    };
+  }, []);
+  
   return (
     <Tab.Navigator
       screenOptions={{
@@ -35,11 +45,21 @@ const TabNavigator = () => {
     >
       <Tab.Screen
         name="HomeTab"
-        component={HomeScreen}
+        component={ForecastScreen}
         options={{
           tabBarLabel: 'Home',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={adjust(20)} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Assistant"
+        component={HomeScreen}
+        options={{
+          tabBarLabel: 'Assistant',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="robot-outline" size={adjust(24)} color={color} />
           ),
         }}
       />

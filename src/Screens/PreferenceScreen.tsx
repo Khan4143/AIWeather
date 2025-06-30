@@ -257,7 +257,7 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
               activeOpacity={0.8}
               onPress={handleBack}
             >
-              <Feather name="arrow-left" size={adjust(20)} color="#333" />
+              <Ionicons name="chevron-back" size={adjust(20)} color="#333" />
             </TouchableOpacity>
           </View>
           

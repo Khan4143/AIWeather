@@ -9,9 +9,7 @@
 
 // Store API keys in a single object
 const apiKeys = {
-  // WARNING: This is a placeholder key that won't work
-  // You need to replace it with your own Gemini API key
-  gemini: 'AIzaSyD_q6fRHQr7nOnEOp78SB4TBd4S09DVrD8', // API key provided by user
+  gemini: 'AIzaSyC7oZ4DJRG3KozdPuui4yBDuLu5fBjbatw', // Updated Gemini API key
   // Add more API keys as needed
 };
 

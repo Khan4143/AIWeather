@@ -3,6 +3,7 @@
 
 import { getApiKey } from '../utils/apiKeys';
 import { WeatherData, ForecastData } from './weatherService';
+import axios from 'axios';
 
 // Try modern API endpoint first
 const PRIMARY_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent';
@@ -129,252 +130,129 @@ export const isWeatherQuestion = async (query: string): Promise<boolean> => {
 
 /**
  * Generate a response using the Gemini API
- * @param prompt - The user's question or prompt
+ * @param userPrompt - The user's question or prompt
  * @param weatherInfo - Current weather data to enhance responses
  * @returns - Response text and whether it's weather related
  */
 export const generateResponse = async (
-  prompt: string, 
-  weatherInfo?: WeatherInfo
+  userPrompt: string,
+  weatherInfo?: WeatherData
 ): Promise<GeminiResponse> => {
-  let retries = 0;
-  let currentApiUrl = PRIMARY_API_URL;
-  
-  while (retries <= MAX_RETRIES) {
+  try {
+    const API_KEY = getApiKey('gemini');
+    if (!API_KEY) {
+      throw new Error('Gemini API key is missing');
+    }
+
+    if (!weatherInfo) {
+      return {
+        isWeatherRelated: false,
+        text: 'Weather data is not available. Please check your connection and try again.'
+      };
+    }
+
+    // Prepare the context for Gemini API
+    const weatherContext = {
+      location: weatherInfo.location,
+      country: weatherInfo.country,
+      temperature: weatherInfo.temperature,
+      feelsLike: weatherInfo.feelsLike,
+      humidity: weatherInfo.humidity,
+      description: weatherInfo.description,
+      windSpeed: weatherInfo.windSpeed,
+      windDirection: weatherInfo.windDirection,
+      visibility: weatherInfo.visibility,
+      pressure: weatherInfo.pressure,
+      sunrise: new Date(weatherInfo.sunrise * 1000).toLocaleTimeString(),
+      sunset: new Date(weatherInfo.sunset * 1000).toLocaleTimeString()
+    };
+
+    // Construct the prompt for Gemini
+    const prompt = `You are a weather assistant named Skylar. Use the following weather data to answer the user's question in a helpful and conversational way. 
+    Current weather data: ${JSON.stringify(weatherContext)}
+    User's question: ${userPrompt}
+    Please provide a natural, conversational response that directly addresses the user's question using the weather data provided. 
+    If the question is not weather-related, politely inform them that you're a weather assistant and can help with weather-related questions.`;
+
+    // Call Gemini API
+    const response = await axios.post(
+      PRIMARY_API_URL,
+      {
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 1024,
+        }
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': API_KEY
+        }
+      }
+    );
+
+    // Extract the response text from Gemini's response
+    const responseText = response.data.candidates[0].content.parts[0].text;
+
+    // Determine if the response is weather-related
+    const weatherKeywords = [
+      'weather', 'rain', 'temperature', 'hot', 'cold', 'sunny', 'cloudy',
+      'forecast', 'humidity', 'storm', 'wind', 'precipitation', 'climate',
+      'snow', 'umbrella', 'celsius', 'fahrenheit', 'degrees', 'sunrise', 'sunset',
+      'outside', 'jacket', 'wear', 'clothing', 'outdoor', 'activity', 'commute',
+      'travel', 'walk', 'bike', 'drive', 'transport', 'visibility', 'air quality'
+    ];
+
+    const isWeatherRelated = weatherKeywords.some(keyword => 
+      userPrompt.toLowerCase().includes(keyword)
+    );
+
+    return {
+      text: responseText,
+      isWeatherRelated
+    };
+
+  } catch (error) {
+    console.error('Error generating response:', error);
+    
+    // Try fallback API endpoint if primary fails
     try {
       const API_KEY = getApiKey('gemini');
-      
-      if (!API_KEY) {
-        console.error('Gemini API key is missing');
-        return {
-          text: "I'm unable to access my weather brain right now. Please check your API configuration.",
-          isWeatherRelated: false
-        };
-      }
-      
-      // Log masked API key for debugging (only showing first 4 chars)
-      const maskedKey = API_KEY.substring(0, 4) + '...' + API_KEY.substring(API_KEY.length - 4);
-      console.log(`Using API key starting with: ${maskedKey}`);
-      
-      // First, check if the prompt is weather-related using our much faster keyword check
-      const isWeatherRelated = await isWeatherQuestion(prompt);
-      
-      // If not weather-related, return a predefined response
-      if (!isWeatherRelated) {
-        return {
-          text: "I'm your weather assistant. I can only answer questions related to weather, forecasts, climate, or outdoor planning. Please ask me about the weather or how it might affect your plans!",
-          isWeatherRelated: false
-        };
-      }
-      
-      // Format current weather data for the prompt
-      let weatherContext = '';
-      if (weatherInfo?.currentWeather) {
-        const w = weatherInfo.currentWeather;
-        const tempUnit = weatherInfo?.units === 'imperial' ? 'F' : 'C';
-        
-        weatherContext = `
-Current weather in ${weatherInfo.location || 'the user\'s location'}:
-- Temperature: ${w.temperature}°${tempUnit} (feels like ${w.feelsLike}°${tempUnit})
-- Conditions: ${w.description}
-- Humidity: ${w.humidity}%
-- Wind: ${w.windSpeed} ${weatherInfo?.units === 'imperial' ? 'mph' : 'm/s'} ${w.windDirection}°
-`;
-
-        // Add forecast data if available
-        if (weatherInfo?.forecast && weatherInfo.forecast.hourly && weatherInfo.forecast.hourly.length > 0) {
-          weatherContext += '\nForecast for the next hours:\n';
-          
-          // Only include the next few forecast points to keep context manageable
-          const nextForecastPoints = weatherInfo.forecast.hourly.slice(0, 3);
-          nextForecastPoints.forEach(point => {
-            const date = new Date(point.date * 1000);
-            weatherContext += `- ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}: ${point.weather.description}, ${point.temperature.day}°${tempUnit}\n`;
-          });
-        }
-      } else {
-        // No weather data available
-        weatherContext = 'Note: I don\'t have current weather data for your location at the moment.';
-      }
-      
-      // Prepare prompt with context about being a weather assistant
-      const enhancedPrompt = `As Skylar, an AI weather assistant in a mobile app, answer this weather-related question with helpful information.
-${weatherContext ? 'Use this weather data to inform your response:' : ''}
-${weatherContext}
-
-User question: "${prompt}"
-
-Keep responses concise and focused on weather insights. If the weather data doesn't directly answer the question, you can provide general weather advice but make it clear you're not using real-time data for that specific question.`;
-      
-      // Call the Gemini API
-      console.log(`Calling Gemini API attempt ${retries + 1}/${MAX_RETRIES + 1}`);
-      console.log(`Using API endpoint: ${currentApiUrl}`);
-      console.log(`Full URL: ${currentApiUrl}?key=[MASKED]`);
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
-      try {
-        const response = await fetch(`${currentApiUrl}?key=${API_KEY}`, {
-          method: 'POST',
+      const response = await axios.post(
+        FALLBACK_API_URL,
+        {
+          contents: [{
+            parts: [{
+              text: `You are a weather assistant named Skylar. The user asked: "${userPrompt}". 
+              Please provide a helpful response about the weather.`
+            }]
+          }]
+        },
+        {
           headers: {
             'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  { text: enhancedPrompt }
-                ]
-              }
-            ],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 100,
-              topP: 0.8,
-              topK: 40
-            },
-            safetySettings: [
-              {
-                category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-              },
-              {
-                category: "HARM_CATEGORY_HATE_SPEECH",
-                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-              },
-              {
-                category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-              },
-              {
-                category: "HARM_CATEGORY_HARASSMENT",
-                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-              }
-            ]
-          }),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
+            'x-goog-api-key': API_KEY
+          }
+        }
+      );
 
-        if (!response.ok) {
-          const statusText = response.statusText;
-          const status = response.status;
-          console.error(`API request failed with status: ${status} - ${statusText}`);
-          
-          // Try to get more details from the error response
-          try {
-            const errorData = await response.text();
-            console.error(`Error details: ${errorData}`);
-          } catch (e) {
-            console.error('Could not parse error response');
-          }
-          
-          // If this is an auth error, don't bother retrying
-          if (status === 401 || status === 403) {
-            return {
-              text: "I can't connect to my weather intelligence service due to authentication issues. Please check your API configuration.",
-              isWeatherRelated: false
-            };
-          }
-          
-          // For 404 Not Found errors, try the old API endpoint format if we haven't already
-          if (status === 404 && currentApiUrl === PRIMARY_API_URL) {
-            console.log('Switching to fallback API endpoint');
-            currentApiUrl = FALLBACK_API_URL;
-            
-            // Don't increment retries for endpoint switching
-            continue;
-          }
-          
-          // For server errors, retry
-          if (status >= 500) {
-            if (retries < MAX_RETRIES) {
-              retries++;
-              const delay = 1000 * Math.pow(2, retries); // Exponential backoff
-              console.log(`Retrying in ${delay}ms...`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              continue;
-            }
-          }
-          
-          throw new Error(`API request failed with status: ${status}`);
-        }
-
-        const data = await response.json();
-        
-        // Extract the response text from the API result
-        let responseText = '';
-        if (data.candidates && 
-            data.candidates[0] && 
-            data.candidates[0].content && 
-            data.candidates[0].content.parts && 
-            data.candidates[0].content.parts[0] && 
-            data.candidates[0].content.parts[0].text) {
-          responseText = data.candidates[0].content.parts[0].text.trim();
-          console.log('Successful API response received');
-        } else {
-          console.error('Unexpected API response structure:', JSON.stringify(data));
-          responseText = "I'm having trouble understanding the weather data right now. Let me try to answer based on general knowledge instead.";
-        }
-
-        return {
-          text: responseText,
-          isWeatherRelated: true
-        };
-      } catch (error) {
-        clearTimeout(timeoutId);
-        throw error; // Re-throw to the outer catch
-      }
-    } catch (error: any) {
-      console.error('Error generating Gemini response:', error);
-      
-      // Handle specific error types
-      if (error.name === 'AbortError') {
-        console.error('API request timed out');
-        if (retries < MAX_RETRIES) {
-          retries++;
-          console.log(`Retrying after timeout (${retries}/${MAX_RETRIES})...`);
-          continue;
-        }
-        return {
-          text: "My weather service is taking too long to respond. Let's try again in a moment!",
-          isWeatherRelated: false
-        };
-      } else if (error.message?.includes('Network request failed')) {
-        if (retries < MAX_RETRIES) {
-          retries++;
-          const delay = 1000 * Math.pow(2, retries); // Exponential backoff
-          console.log(`Network error, retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-        return {
-          text: "I'm having trouble connecting to my weather information service. Please check your internet connection and try again.",
-          isWeatherRelated: false
-        };
-      } else {
-        // For unknown errors, try the fallback endpoint if we haven't already
-        if (currentApiUrl === PRIMARY_API_URL && !retries) {
-          console.log('Switching to fallback API endpoint after error');
-          currentApiUrl = FALLBACK_API_URL;
-          retries++;
-          continue;
-        }
-        
-        // If we've already tried the fallback or this is a second retry
-        retries++;
-        if (retries > MAX_RETRIES) {
-          break;
-        }
-      }
+      return {
+        text: response.data.candidates[0].content.parts[0].text,
+        isWeatherRelated: true
+      };
+    } catch (fallbackError) {
+      console.error('Fallback API also failed:', fallbackError);
+      return {
+        text: "I'm having trouble processing your request. Please try again in a moment.",
+        isWeatherRelated: false
+      };
     }
   }
-  
-  // Default fallback response after all retries failed
-  return {
-    text: "I'm having trouble processing your weather question right now. Please try again in a moment.",
-    isWeatherRelated: false
-  };
 }; 

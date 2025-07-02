@@ -25,6 +25,7 @@ import { SCREEN_HEIGHT } from '../constants/dimesions';
 import { UserDataManager } from '../utils/userDataManager';
 import Geolocation from 'react-native-geolocation-service';
 import { validateCity } from '../services/weatherService';
+import debounce from 'lodash/debounce';
 
 const STANDARD_SPACING = adjust(15);
 
@@ -114,6 +115,9 @@ interface CityObject {
   display: string;
 }
 
+// Google Places API Key
+const GOOGLE_PLACES_API_KEY = 'AIzaSyAJcSmb8jAEU5qVlzR3sTRcraWxb38B31w';
+
 const UserInfo = ({ navigation }: { navigation: any }) => {
   // State for form fields
   const [age, setAge] = useState('');
@@ -122,162 +126,123 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
   const [manualLocation, setManualLocation] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [citySuggestions, setCitySuggestions] = useState<CityObject[]>([]);
-  const scrollViewRef = useRef<ScrollView>(null);
-  const [isLocating, setIsLocating] = useState(false);
   const [showCitySuggestions, setShowCitySuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [placesResults, setPlacesResults] = useState<any[]>([]);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [isLocating, setIsLocating] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // Add a ref for the input field
   const locationInputRef = useRef<TextInput>(null);
 
-  // Fetch city suggestions from OpenWeatherMap API
-  const fetchCitySuggestions = useCallback(async (query: string) => {
+  // Fetch from Google Places API
+  const searchPlaces = useCallback(async (query: string) => {
     if (!query || query.length < 2) {
-      setCitySuggestions([]);
+      setPlacesResults([]);
       return;
     }
-
-    // First check our static list for partial matches
-    const staticMatches: CityObject[] = POPULAR_CITIES.filter(city => 
-      city.toLowerCase().includes(query.toLowerCase())
-    ).map((city, index) => ({
-      key: `static-${city}-${index}`,
-      display: city
-    }));
     
-    // If we have matches in our static list, show them immediately
-    if (staticMatches.length > 0) {
-      setCitySuggestions(staticMatches);
+    try {
+      setIsLoading(true);
       
-      // If we have sufficient local matches, we might not need the API request
-      if (staticMatches.length >= 3) {
+      // Clear any previous results
+      setPlacesResults([]);
+      
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&types=(cities)&key=${GOOGLE_PLACES_API_KEY}`;
+      console.log('Request URL (without API key):', url.replace(GOOGLE_PLACES_API_KEY, 'API_KEY'));
+      
+      const response = await fetch(url);
+      console.log('Places API Response Status:', response.status);
+      console.log('Places API Response Status Text:', response.statusText);
+      
+      const data = await response.json();
+      console.log('Places API Response:', data);
+      
+      if (data.error) {
+        console.error('Places API Error:', {
+          code: data.error.code,
+          message: data.error.message,
+          status: data.error.status,
+          details: data.error.details
+        });
         return;
       }
-    }
-
-    setIsLoading(true);
-    try {
-      // Use a wildcard approach for the API call by adding an asterisk
-      // This makes the query more lenient for partial matches
-      const searchTerm = query.endsWith('*') ? query : `${query}*`;
       
-      const response = await fetch(
-        `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(searchTerm)}&limit=15&appid=${API_KEY}`
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch city suggestions');
-      }
-
-      const data = await response.json();
-      
-      // Format results as "City, Country Code" and add index to ensure uniqueness
-      if (data && data.length > 0) {
-        // Create formatted cities array
-        const formattedCities: CityObject[] = data.map((item: any, index: number) => ({
-          key: `${item.name}-${item.country}-${index}`,
-          display: `${item.name}, ${item.country}`
+      if (data.status === 'OK' && data.predictions) {
+        const formattedResults = data.predictions.map((prediction: any) => ({
+          place_id: prediction.place_id,
+          description: prediction.description,
+          structured_formatting: {
+            main_text: prediction.structured_formatting.main_text,
+            secondary_text: prediction.structured_formatting.secondary_text
+          }
         }));
-
-        // Filter the results to prioritize exact matches and ensure we get the best results
-        const exactMatches: CityObject[] = formattedCities.filter((city: CityObject) => 
-          city.display.toLowerCase().includes(query.toLowerCase())
-        );
         
-        // Validate cities against the OpenWeather API to ensure they exist
-        const validatedMatches: CityObject[] = [];
-        const validationPromises = exactMatches.map(async (city: CityObject) => {
-          const isValid = await validateCity(city.display);
-          if (isValid) {
-            validatedMatches.push(city);
-          } else {
-            console.log(`City validation failed for: ${city.display}`);
-          }
-        });
-        
-        // Wait for all validation checks to complete
-        await Promise.all(validationPromises);
-        
-        // Combine with our static matches (which we assume are valid) and deduplicate
-        const allMatches: CityObject[] = [...validatedMatches];
-        
-        // Only add static matches if they don't appear to be duplicates
-        for (const staticCity of staticMatches) {
-          const isDuplicate = allMatches.some((city: CityObject) => 
-            city.display.toLowerCase() === staticCity.display.toLowerCase()
-          );
-          if (!isDuplicate) {
-            // Validate static city to ensure it exists in OpenWeather API
-            const isValid = await validateCity(staticCity.display);
-            if (isValid) {
-              allMatches.push(staticCity);
-            }
-          }
-        }
-        
-        setCitySuggestions(allMatches.slice(0, 10)); // Limit to 10 results
-      } else {
-        // Fall back to our static matches if the API returns nothing
-        // But still validate them
-        const validatedStaticMatches: CityObject[] = [];
-        const validationPromises = staticMatches.map(async (city: CityObject) => {
-          const isValid = await validateCity(city.display);
-          if (isValid) {
-            validatedStaticMatches.push(city);
-          }
-        });
-        
-        await Promise.all(validationPromises);
-        setCitySuggestions(validatedStaticMatches);
+        setPlacesResults(formattedResults);
+      } else if (data.status === 'REQUEST_DENIED') {
+        console.error('REQUEST_DENIED - Common causes:');
+        console.error('1. Places API not enabled in Google Cloud Console');
+        console.error('2. Invalid API key');
+        console.error('3. Billing not enabled');
+        console.error('4. API key restrictions preventing access');
       }
     } catch (error) {
-      console.error('Error fetching city suggestions:', error);
-      // When an error occurs, still show any static matches we have
-      // But validate them first if possible
-      try {
-        const validatedStaticMatches: CityObject[] = [];
-        const validationPromises = staticMatches.map(async (city: CityObject) => {
-          try {
-            const isValid = await validateCity(city.display);
-            if (isValid) {
-              validatedStaticMatches.push(city);
-            }
-          } catch (err) {
-            // If validation fails, just use the static city anyway
-            validatedStaticMatches.push(city);
-          }
-        });
-        
-        await Promise.all(validationPromises);
-        setCitySuggestions(validatedStaticMatches);
-      } catch (validationError) {
-        // If all else fails, just use the static matches
-        setCitySuggestions(staticMatches);
-      }
+      console.error('Error in searchPlaces:', error);
     } finally {
       setIsLoading(false);
     }
   }, []);
-
-  // Handle text input for location with debouncing
+  
+  // Debounced search handler
+  const debouncedSearchPlaces = useCallback(
+    debounce((query: string) => {
+      searchPlaces(query);
+    }, 300),
+    [searchPlaces]
+  );
+  
+  // Handle text input change
   const handleLocationTextChange = (text: string) => {
     setManualLocation(text);
     setSearchQuery(text);
+    setShowCitySuggestions(true); // Always show suggestions when typing
     
-    // Always show suggestions if there's text, even if short
-    setShowCitySuggestions(text.length > 0);
-    
-    // Debounce API calls to avoid too many requests
-    if (searchTimeout.current) {
-      clearTimeout(searchTimeout.current);
+    if (text.length < 2) {
+      setPlacesResults([]);
+    } else {
+      debouncedSearchPlaces(text);
     }
-    
-    // Shorter timeout for better responsiveness
-    searchTimeout.current = setTimeout(() => {
-      fetchCitySuggestions(text);
-    }, 200); // 200ms debounce time (reduced from 300ms)
+  };
+  
+  // Handle place selection
+  const handlePlaceSelected = async (placeId: string, description: string) => {
+    try {
+      setShowCitySuggestions(false); // Hide suggestions when a place is selected
+      
+      // Get detailed place information
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=formatted_address,name&key=${GOOGLE_PLACES_API_KEY}`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch place details');
+      }
+      
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.result) {
+        const cityName = data.result.name;
+        const formattedAddress = data.result.formatted_address;
+        
+        // Update location
+        setManualLocation(formattedAddress || description);
+        setSearchQuery('');
+        Keyboard.dismiss();
+      }
+    } catch (error) {
+      console.error('Error selecting place:', error);
+    }
   };
 
   useEffect(() => {
@@ -314,7 +279,6 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
         );
         return granted === PermissionsAndroid.RESULTS.GRANTED;
       } catch (err) {
-        console.warn(err);
         return false;
       }
     }
@@ -344,7 +308,6 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
         throw new Error('Location not found');
       }
     } catch (error) {
-      console.error('Reverse geocoding error:', error);
       return null;
     }
   };
@@ -390,7 +353,6 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
           setIsLocating(false);
         },
         (error) => {
-          console.error('Geolocation error:', error);
           Alert.alert(
             'Location Error',
             'Unable to get your current location. Please try again or enter your location manually.',
@@ -401,7 +363,6 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
       );
     } catch (error) {
-      console.error('Location detection error:', error);
       setIsLocating(false);
       Alert.alert(
         'Error',
@@ -409,13 +370,6 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
         [{ text: 'OK' }]
       );
     }
-  };
-
-  // Handle city selection
-  const handleCitySelect = (cityObj: {key: string, display: string}) => {
-    setManualLocation(cityObj.display);
-    setSearchQuery('');
-    setShowCitySuggestions(false);
   };
 
   // Handle next button press
@@ -443,9 +397,7 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
     // Save to AsyncStorage
     try {
       await UserDataManager.saveUserProfile();
-      console.log('User profile data saved successfully');
     } catch (error) {
-      console.error('Error saving user profile data:', error);
     }
     
     // Navigate to next screen
@@ -458,25 +410,6 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
       'Why We Ask For Your Information',
       'Skylar uses your age, gender, and location to provide personalized weather recommendations, clothing suggestions, and health tips relevant to your demographic and local conditions.',
       [{ text: 'Got it!' }]
-    );
-  };
-
-  // Render city item for FlatList
-  const renderCityItem = ({ item }: { item: string }) => {
-    // Create a city object compatible with our new format
-    const cityObj = {
-      key: `modal-${item}`,
-      display: item
-    };
-    
-    return (
-      <TouchableOpacity
-        style={styles.cityItem}
-        onPress={() => handleCitySelect(cityObj)}
-      >
-        <Ionicons name="location-outline" size={adjust(16)} color="#4361EE" />
-        <Text style={styles.cityItemText}>{item}</Text>
-      </TouchableOpacity>
     );
   };
 
@@ -664,47 +597,17 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
             </View>
             <TextInput
               ref={locationInputRef}
-              style={{
-                height: adjust(42),
-                paddingHorizontal: adjust(12),
-                paddingLeft: adjust(35),
-                fontSize: adjust(13),
-                color: '#333',
-                backgroundColor: '#f8f9fa',
-                borderRadius: adjust(8),
-                borderColor: '#e0e0e0',
-                borderWidth: 1,
-                zIndex: 1,
-              }}
+              style={styles.locationInput}
               placeholder="Enter your city or area"
               placeholderTextColor="#8e9aaf"
               value={manualLocation}
               onChangeText={handleLocationTextChange}
-              onFocus={() => {
-                setShowCitySuggestions(manualLocation.length > 0);
-                // Scroll to make room for suggestions when focused
-                if (scrollViewRef.current && locationInputRef.current) {
-                  setTimeout(() => {
-                    locationInputRef.current?.measureInWindow((x, y, width, height) => {
-                      if (scrollViewRef.current) {
-                        scrollViewRef.current.scrollTo({ 
-                          y: y - 120, 
-                          animated: true 
-                        });
-                      }
-                    });
-                  }, 100);
-                }
-              }}
-              onBlur={() => {
-                // Delay hiding suggestions to allow for selection
-                setTimeout(() => setShowCitySuggestions(false), 150);
-              }}
+              onFocus={() => setShowCitySuggestions(true)}
             />
           </View>
 
-          {/* City suggestions dropdown - displayed separately below input */}
-          {showCitySuggestions && searchQuery.length > 0 && (
+          {/* City suggestions dropdown */}
+          {showCitySuggestions && manualLocation.length > 0 && (
             <View style={styles.suggestionsWrapper}>
               <View style={styles.suggestionsCard}>
                 {isLoading ? (
@@ -712,24 +615,31 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
                     <ActivityIndicator size="small" color="#4361EE" />
                     <Text style={styles.loadingText}>Finding cities...</Text>
                   </View>
-                ) : citySuggestions.length > 0 ? (
+                ) : placesResults.length > 0 ? (
                   <ScrollView 
                     style={styles.suggestionsList}
                     showsVerticalScrollIndicator={true}
                     keyboardShouldPersistTaps="handled"
                     nestedScrollEnabled={true}
                   >
-                    {citySuggestions.map((item, index) => (
+                    {placesResults.map((item) => (
                       <TouchableOpacity 
-                        key={item.key}
-                        style={[
-                          styles.suggestionItem,
-                          index === citySuggestions.length - 1 && { borderBottomWidth: 0 }
-                        ]}
-                        onPress={() => handleCitySelect(item)}
+                        key={item.place_id}
+                        style={styles.suggestionItem}
+                        onPress={() => handlePlaceSelected(item.place_id, item.description)}
                       >
                         <Ionicons name="location-outline" size={adjust(16)} color="#666" />
-                        <Text style={styles.suggestionText}>{item.display}</Text>
+                        <View style={styles.suggestionTextContainer}>
+                          <Text style={styles.suggestionMainText}>
+                            {item.structured_formatting?.main_text || item.description.split(',')[0]}
+                          </Text>
+                          {(item.structured_formatting?.secondary_text || item.description.includes(',')) && (
+                            <Text style={styles.suggestionSecondaryText}>
+                              {item.structured_formatting?.secondary_text || 
+                               item.description.split(',').slice(1).join(',').trim()}
+                            </Text>
+                          )}
+                        </View>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -741,14 +651,6 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
               </View>
             </View>
           )}
-            
-          {/* Selected Location Display */}
-          {manualLocation ? (
-            <View style={styles.selectedLocationContainer}>
-              <Ionicons name="checkmark-circle" size={adjust(18)} color="#4CD964" />
-              <Text style={styles.selectedLocationText}>{manualLocation}</Text>
-            </View>
-          ) : null}
         </View>
 
         {/* Why do we ask this */}
@@ -911,31 +813,27 @@ const styles = StyleSheet.create({
     fontSize: adjust(12),
   },
   placesInputContainer: {
-    marginBottom: 10, // Reduced spacing to make room for suggestions
     position: 'relative',
-    zIndex: 100,
+    marginTop: adjust(8),
+    zIndex: 1000,
   },
   locationIconContainer: {
     position: 'absolute',
     left: adjust(10),
-    top: adjust(15),
-    zIndex: 10,
+    top: adjust(13),
+    zIndex: 1001,
   },
-  selectedLocationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: adjust(10),
-    padding: adjust(12),
-    backgroundColor: 'rgba(76, 217, 100, 0.1)',
-    borderRadius: adjust(8),
-    borderWidth: 1,
-    borderColor: 'rgba(76, 217, 100, 0.3)',
-  },
-  selectedLocationText: {
-    fontSize: adjust(15),
+  locationInput: {
+    height: adjust(42),
+    paddingHorizontal: adjust(12),
+    paddingLeft: adjust(35),
+    fontSize: adjust(13),
     color: '#333',
-    marginLeft: adjust(8),
-    fontWeight: '500',
+    backgroundColor: '#f8f9fa',
+    borderRadius: adjust(8),
+    borderColor: '#e0e0e0',
+    borderWidth: 1,
+    zIndex: 1,
   },
   whyContainer: {
     flexDirection: 'row',
@@ -988,17 +886,18 @@ const styles = StyleSheet.create({
     marginLeft: adjust(10),
   },
   suggestionsWrapper: {
-    position: 'relative',
-    marginTop: -35, // Adjust this value to position correctly below input
-    marginBottom: 20,
-    zIndex: 9999,
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 2,
+    zIndex: 1002,
   },
   suggestionsCard: {
     backgroundColor: '#fff',
     borderRadius: adjust(8),
     minHeight: adjust(50),
     maxHeight: adjust(200),
-    marginTop: adjust(2),
     borderWidth: 1,
     borderColor: '#e0e0e0',
     shadowColor: '#000',
@@ -1006,7 +905,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 8,
-    overflow: 'hidden',
   },
   suggestionsList: {
     maxHeight: adjust(200),
@@ -1020,11 +918,19 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
     backgroundColor: '#fff',
   },
-  suggestionText: {
+  suggestionTextContainer: {
+    flex: 1,
+    marginLeft: adjust(8),
+  },
+  suggestionMainText: {
     fontSize: adjust(14),
     color: '#333',
-    marginLeft: adjust(12),
-    fontWeight: '400',
+    fontWeight: '500',
+  },
+  suggestionSecondaryText: {
+    fontSize: adjust(12),
+    color: '#666',
+    marginTop: adjust(2),
   },
   loadingContainer: {
     padding: adjust(15),

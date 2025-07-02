@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -424,8 +425,6 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
               </View>
             </View>
 
-            {/* Your Routine Preferences */}
-            <Text style={styles.sectionTitle}>Your Routine Preferences</Text>
             
             {/* Morning Activities */}
             <Text style={styles.subSectionTitle}>Morning Activities</Text>
@@ -576,49 +575,6 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
               Skylar only alerts you when it matters — not too often
             </Text>
 
-            {/* Customize Timing Button
-            <TouchableOpacity style={styles.customizeButton}>
-              <Text style={styles.customizeButtonText}>Customize Timing</Text>
-            </TouchableOpacity> */}
-
-            {/* Skylar's Forecast History */}
-            <Text style={styles.sectionTitle}>Skylar's Forecast History</Text>
-            
-            {/* Forecast history items */}
-            <View style={styles.historyContainer}>
-              {/* April 28 history */}
-              <View style={styles.historyItem}>
-                <View style={styles.historyHeader}>
-                  <Text style={styles.historyDate}>Apr 28</Text>
-                  <View style={styles.statusDot} />
-                </View>
-                
-                <Text style={styles.historyQuestion}>Should I run at 6:30 AM?</Text>
-                <Text style={styles.historyResponse}>
-                  It's likely to rain <Text style={[styles.blueText, styles.weatherIcon]}>☂</Text> by 7:15 AM.
-                </Text>
-                <Text style={styles.historyUserAction}>
-                  <Text style={styles.greenText}>You moved your run!</Text>
-                </Text>
-              </View>
-
-              {/* April 27 history */}
-              <View style={styles.historyItem}>
-                <View style={styles.historyHeader}>
-                  <Text style={styles.historyDate}>Apr 27</Text>
-                  <View style={styles.statusDot} />
-                </View>
-                
-                <Text style={styles.historyQuestion}>What should I wear today?</Text>
-                <Text style={styles.historyResponse}>
-                  Light jacket recommended <Text style={[styles.blueText, styles.temperatureText]}>— 18°F</Text> with light breeze.
-                </Text>
-                <Text style={styles.historyUserAction}>
-                  <Text style={styles.greenText}>Perfect choice!</Text>
-                </Text>
-              </View>
-            </View>
-
             {/* Other Preferences */}
             <Text style={styles.sectionTitle}>Other Preferences</Text>
             
@@ -627,7 +583,7 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
               {/* Location */}
               <View style={styles.preferenceCard}>
                 <View style={styles.preferenceIconContainer}>
-                  <Ionicons name="location-outline" size={adjust(20)} color="#4361EE" />
+                  <Ionicons name="location-outline" size={adjust(15)} color="#4361EE" />
                 </View>
                 <Text style={styles.preferenceCardTitle}>Location</Text>
                 <Text style={styles.preferenceCardValue}>{userLocation || 'New York'}</Text>
@@ -636,7 +592,7 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
               {/* Outfit Style */}
               <View style={styles.preferenceCard}>
                 <View style={styles.preferenceIconContainer}>
-                  <MaterialIcons name="checkroom" size={adjust(20)} color="#4361EE" />
+                  <MaterialIcons name="checkroom" size={adjust(15)} color="#4361EE" />
                 </View>
                 <Text style={styles.preferenceCardTitle}>Outfit Style</Text>
                 <Text style={styles.preferenceCardValue}>{getStyleDisplayName(stylePreference)}</Text>
@@ -645,7 +601,7 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
               {/* Health Tags */}
               <View style={styles.preferenceCard}>
                 <View style={styles.preferenceIconContainer}>
-                  <MaterialIcons name="favorite-outline" size={adjust(20)} color="#4361EE" />
+                  <MaterialIcons name="favorite-outline" size={adjust(15)} color="#4361EE" />
                 </View>
                 <Text style={styles.preferenceCardTitle}>Health Tags</Text>
                 <Text style={styles.preferenceCardValue}>
@@ -656,7 +612,7 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
               {/* App Settings */}
               <View style={styles.preferenceCard}>
                 <View style={styles.preferenceIconContainer}>
-                  <Ionicons name="settings-outline" size={adjust(20)} color="#4361EE" />
+                  <Ionicons name="settings-outline" size={adjust(15)} color="#4361EE" />
                 </View>
                 <Text style={styles.preferenceCardTitle}>App Settings</Text>
                 <Text style={styles.preferenceCardValue}>{temperatureUnit}, {languagePreference}</Text>
@@ -674,7 +630,6 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
                   <Text style={styles.preferenceValueText}>
                     {getStyleDisplayName(stylePreference)}
                   </Text>
-                  {/* <Ionicons name="chevron-forward" size={adjust(16)} color="#4361EE" /> */}
                 </View>
               </View>
               
@@ -785,7 +740,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: adjust(15),
-    marginBottom: adjust(8),
   },
   profileImageContainer: {
     width: adjust(60),
@@ -801,82 +755,78 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   avatarInitial: {
-    fontSize: adjust(24),
+    fontSize: adjust(20),
     fontWeight: 'bold',
     color: '#fff',
   },
   nameContainer: {
     alignItems: 'flex-start',
-    marginBottom: adjust(16),
     paddingLeft: adjust(5),
   },
   greeting: {
-    fontSize: adjust(22),
+    fontSize: adjust(20),
     fontWeight: '600',
     color: '#333',
-    marginBottom: adjust(6),
   },
   subtitle: {
-    fontSize: adjust(14),
+    fontSize: adjust(13),
     color: '#666',
-    marginBottom: adjust(4),
   },
   editButton: {
-    width: adjust(40),
-    height: adjust(40),
-    borderRadius: adjust(20),
+    width: adjust(36),
+    height: adjust(36),
+    borderRadius: adjust(18),
     backgroundColor: 'rgba(67, 97, 238, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   sectionTitle: {
-    fontSize: adjust(16),
+    fontSize: adjust(15),
     fontWeight: '600',
     color: '#333',
-    marginTop: adjust(16),
-    marginBottom: adjust(10),
+    marginTop: adjust(14),
+    marginBottom: adjust(6),
   },
   subSectionTitle: {
-    fontSize: adjust(14),
+    fontSize: adjust(13),
     color: '#666',
-    marginBottom: adjust(8),
-    marginTop: adjust(8),
+    marginBottom: adjust(6),
   },
   scrollContainer: {
-    marginHorizontal: -adjust(20),
-    marginBottom: adjust(12),
+    marginHorizontal: -adjust(16),
+    marginBottom: adjust(18),
   },
   activitiesContainer: {
     paddingVertical: adjust(4),
-    paddingHorizontal: adjust(20),
+    paddingHorizontal: adjust(16),
     flexDirection: 'row',
   },
   activityBubble: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f2f2f2',
-    borderRadius: adjust(20),
-    paddingHorizontal: adjust(12),
-    paddingVertical: adjust(6),
+    borderRadius: adjust(16),
+    paddingHorizontal: adjust(10),
+    paddingVertical: adjust(5),
     marginRight: adjust(8),
   },
   selectedActivity: {
     backgroundColor: '#4361EE',
   },
   activityText: {
-    fontSize: adjust(12),
+    fontSize: adjust(11),
     fontWeight: '500',
     color: '#666',
-    marginLeft: adjust(6),
+    marginLeft: adjust(4),
   },
   selectedActivityText: {
     color: '#fff',
   },
   cardContainer: {
     backgroundColor: '#ffffff',
-    borderRadius: adjust(12),
-    padding: adjust(16),
-    marginBottom: adjust(20),
+    borderRadius: adjust(10),
+    padding: adjust(12),
+    marginBottom: adjust(12),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
@@ -887,16 +837,19 @@ const styles = StyleSheet.create({
   },
   cleanCardContainer: {
     backgroundColor: '#ffffff',
-    borderRadius: adjust(12),
-    padding: adjust(16),
-    marginBottom: adjust(20),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 1,
-    elevation: 1,
-    overflow: 'hidden',
-    borderWidth: 0,
+    borderRadius: adjust(10),
+    padding: adjust(12),
+    marginBottom: adjust(12),
+    shadowColor: Platform.OS === 'ios' ? '#00000010' : '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+    borderWidth: Platform.OS === 'android' ? 0.1 : 0,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   commuteSection: {
     marginBottom: adjust(0),
@@ -904,24 +857,24 @@ const styles = StyleSheet.create({
   commuteHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: adjust(12),
+    marginBottom: adjust(8),
   },
   commuteTitle: {
-    fontSize: adjust(14),
+    fontSize: adjust(13),
     fontWeight: '500',
     color: '#333',
-    marginLeft: adjust(8),
+    marginLeft: adjust(6),
   },
   preferencesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: adjust(12),
+    paddingVertical: adjust(8),
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
   preferenceLabel: {
-    fontSize: adjust(14),
+    fontSize: adjust(13),
     color: '#333',
   },
   preferenceValue: {
@@ -929,24 +882,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   preferenceValueText: {
-    fontSize: adjust(14),
+    fontSize: adjust(13),
     color: '#808080',
     marginRight: adjust(4),
   },
   notificationBox: {
     backgroundColor: 'rgba(67, 97, 238, 0.08)',
     borderRadius: adjust(10),
-    padding: adjust(16),
-    marginBottom: adjust(20),
+    padding: adjust(12),
+    marginBottom: adjust(12),
   },
   notificationOptions: {
-    marginVertical: adjust(8),
+    marginVertical: adjust(6),
   },
   notificationRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: adjust(12),
+    paddingVertical: adjust(8),
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
@@ -955,26 +908,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   notificationText: {
-    fontSize: adjust(14),
+    fontSize: adjust(13),
     color: '#333',
-    marginLeft: adjust(8),
+    marginLeft: adjust(6),
   },
   notificationCaption: {
-    fontSize: adjust(13),
+    fontSize: adjust(12),
     color: '#666',
-    marginTop: adjust(8),
-    marginBottom: adjust(16),
+    marginTop: adjust(6),
+    marginBottom: adjust(12),
   },
   customizeButton: {
     backgroundColor: '#4361EE',
     borderRadius: adjust(10),
-    paddingVertical: adjust(14),
+    paddingVertical: adjust(12),
     alignItems: 'center',
-    marginBottom: adjust(24),
+    marginBottom: adjust(16),
   },
   customizeButtonText: {
     color: '#fff',
-    fontSize: adjust(14),
+    fontSize: adjust(13),
     fontWeight: '600',
   },
   resetContainer: {
@@ -1013,14 +966,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: adjust(16),
+    marginBottom: adjust(12),
   },
   infoCard: {
     width: '48%',
     backgroundColor: '#ffffff',
     borderRadius: adjust(10),
-    padding: adjust(12),
-    marginBottom: adjust(10),
+    padding: adjust(10),
+    marginBottom: adjust(8),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
@@ -1030,12 +983,12 @@ const styles = StyleSheet.create({
     borderWidth: 0,
   },
   infoLabel: {
-    fontSize: adjust(12),
+    fontSize: adjust(11),
     color: '#666',
-    marginBottom: adjust(4),
+    marginBottom: adjust(2),
   },
   infoValue: {
-    fontSize: adjust(14),
+    fontSize: adjust(13),
     fontWeight: '500',
     color: '#333',
   },
@@ -1046,123 +999,50 @@ const styles = StyleSheet.create({
     paddingVertical: adjust(8),
     paddingHorizontal: adjust(4),
   },
-  historyContainer: {
-    marginTop: adjust(8),
-    marginBottom: adjust(24),
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    borderRadius: adjust(16),
-    padding: adjust(12),
-    paddingBottom: adjust(4),
-  },
-  historyItem: {
-    marginBottom: adjust(16),
-    backgroundColor: 'white',
-    borderRadius: adjust(14),
-    padding: adjust(16),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderLeftWidth: 4,
-    borderLeftColor: '#4361EE',
-    overflow: 'hidden',
-  },
-  historyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: adjust(10),
-    paddingBottom: adjust(6),
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f8',
-  },
-  historyDate: {
-    fontSize: adjust(14),
-    fontWeight: '600',
-    color: '#333',
-    marginRight: adjust(6),
-  },
-  statusDot: {
-    width: adjust(8),
-    height: adjust(8),
-    borderRadius: adjust(4),
-    backgroundColor: '#4CD964',
-    marginRight: adjust(2),
-  },
-  historyQuestion: {
-    fontSize: adjust(14),
-    fontWeight: '500',
-    color: '#333',
-    marginBottom: adjust(6),
-  },
-  historyResponse: {
-    fontSize: adjust(14),
-    color: '#333',
-    marginBottom: adjust(4),
-    flexShrink: 1,
-    lineHeight: adjust(20),
-  },
-  historyUserAction: {
-    fontSize: adjust(14),
-    color: '#666',
-    marginTop: adjust(2),
-  },
-  blueText: {
-    color: '#4361EE',
-    fontWeight: '500',
-  },
-  greenText: {
-    color: '#4CD964',
-    fontWeight: '500',
-  },
-  weatherIcon: {
-    fontSize: adjust(16),
-    paddingHorizontal: adjust(2),
-  },
-  temperatureText: {
-    paddingHorizontal: adjust(2),
-  },
   preferencesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginTop: adjust(10),
-    marginBottom: adjust(24),
+    paddingHorizontal: adjust(4),
   },
   preferenceCard: {
     width: '48%',
     backgroundColor: '#ffffff',
     borderRadius: adjust(10),
-    padding: adjust(16),
-    marginBottom: adjust(12),
-    minHeight: adjust(110),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 1,
-    elevation: 1,
-    overflow: 'hidden',
-    borderWidth: 0,
+    padding: adjust(8),
+    paddingLeft: adjust(6),
+    marginBottom: adjust(10),
+    minHeight: adjust(85),
+    shadowColor: Platform.OS === 'ios' ? '#00000010' : '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+    borderWidth: Platform.OS === 'android' ? 0.1 : 0,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   preferenceIconContainer: {
-    width: adjust(36),
-    height: adjust(36),
-    borderRadius: adjust(18),
+    width: adjust(28),
+    height: adjust(28),
+    borderRadius: adjust(14),
     backgroundColor: 'rgba(67, 97, 238, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: adjust(10),
-  },
-  preferenceCardTitle: {
-    fontSize: adjust(14),
-    color: '#666',
     marginBottom: adjust(4),
   },
+  preferenceCardTitle: {
+    fontSize: adjust(11),
+    color: '#666',
+    marginBottom: adjust(2),
+  },
   preferenceCardValue: {
-    fontSize: adjust(15),
+    fontSize: adjust(13),
     fontWeight: '500',
     color: '#333',
+    marginTop: adjust(1),
   },
 });
 

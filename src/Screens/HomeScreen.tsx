@@ -25,6 +25,31 @@ import { UserData } from '../Screens/UserInfo';
 import { useFocusEffect } from '@react-navigation/native';
 import { generateResponse } from '../services/geminiService';
 import { PreferenceData } from '../Screens/PreferenceScreen';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+
+// Storage key for saved cities
+const SAVED_CITIES_KEY = 'skylar_saved_cities';
+
+// List of popular cities available in OpenWeather API
+const POPULAR_CITIES = [
+  'New York, US',
+  'Los Angeles, US',
+  'London, GB',
+  'Tokyo, JP',
+  'Paris, FR',
+  'Berlin, DE',
+  'Sydney, AU',
+  'Mumbai, IN',
+  'Beijing, CN',
+  'Rio de Janeiro, BR',
+];
+
+// Type definition for city objects
+interface CityObject {
+  key: string;
+  display: string;
+}
 
 // Helper function to get the time of day greeting
 const getGreeting = () => {
@@ -198,7 +223,15 @@ const getOutfitTipIcon = (tip: string) => {
   return <MaterialCommunityIcons name="tshirt-crew" size={adjust(16)} color="#4361EE" style={styles.modalItemIcon} />;
 };
 
-const HomeScreen = ({ navigation }: { navigation: any }) => {
+type RootStackParamList = {
+  Forecast: { openCityModal?: boolean; fromHomeScreen?: boolean } | undefined;
+  // ... add other screens as needed
+};
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Forecast'>;
+
+const HomeScreen = () => {
+  const navigation = useNavigation<NavigationProp>();
   // Add state for modal
   const [modalVisible, setModalVisible] = useState(false);
   const [activeModal, setActiveModal] = useState('');
@@ -250,7 +283,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     ].join('|');
   }, [currentWeather]);
 
-  // Fetch weather data when the screen mounts or on location change
+  // Set up intervals to check for data freshness and user name
   useEffect(() => {
     if (UserData.location) {
       console.log("HomeScreen - Fetching weather for location:", UserData.location);
@@ -578,6 +611,13 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     };
   };
 
+  const handleLocationPress = () => {
+    navigation.navigate('Forecast', { 
+      openCityModal: true,
+      fromHomeScreen: true 
+    });
+  };
+
   if (isLoading && !currentWeather) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -633,36 +673,53 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
           bounces={false}
           contentContainerStyle={styles.scrollContainer}
         >
-          {/* Header with greeting */}
-        <View style={styles.header}>
-            <View>
-              <Text style={styles.greeting}>{getGreeting()}, {userName}!</Text>
-              <Text style={styles.subGreeting}>{currentWeather?.description ? currentWeather.description : "Loading weather..."}</Text>
-            </View>
+          {/* Header with location */}
+          <View style={styles.header}>
+            <TouchableOpacity 
+              style={styles.locationContainer}
+              onPress={handleLocationPress}
+            >
+              <MaterialCommunityIcons name="map-marker" size={adjust(20)} color="#333" />
+              <Text style={styles.headerLocationText}>
+                {currentWeather?.location ? `${currentWeather.location}, ${currentWeather.country}` : "Loading location..."}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Weather Card */}
           <View style={styles.weatherCard}>
+            {/* Weather Icon and Description - Top Right */}
+            <View style={styles.weatherIconContainer}>
+              {currentWeather?.icon ? (
+                <MaterialCommunityIcons 
+                  name={getWeatherIconMaterial(currentWeather.icon)} 
+                  size={adjust(65)} 
+                  color={getWeatherIconColor(currentWeather.icon)} 
+                />
+              ) : (
+                <MaterialCommunityIcons 
+                  name="weather-partly-cloudy" 
+                  size={adjust(60)} 
+                  color="#A9A9A9" 
+                />
+              )}
+              <Text style={styles.weatherDescription}>
+                {currentWeather?.description || "Loading..."}
+              </Text>
+            </View>
+
             {/* Current temperature */}
             <View style={styles.currentTemp}>
-              <Text style={styles.tempValue}>{currentWeather?.temperature.toFixed(0) || '--'}°{tempUnit}</Text>
-              {/* Weather icon */}
-              <View style={styles.weatherIcon}>
-                {currentWeather?.icon ? (
-                  <MaterialCommunityIcons 
-                    name={getWeatherIconMaterial(currentWeather.icon)} 
-                    size={adjust(28)} 
-                    color={getWeatherIconColor(currentWeather.icon)} 
-                  />
-                ) : (
-                  <MaterialCommunityIcons name="weather-partly-cloudy" size={adjust(28)} color="#A9A9A9" />
-                )}
-          </View>
-        </View>
+              <Text style={styles.tempValue}>
+                {currentWeather?.temperature.toFixed(0) || '--'}°{tempUnit}
+              </Text>
+            </View>
 
-            {/* High/Low temperature */}
+            {/* Hi/Lo temperatures */}
             <View style={styles.tempMinMax}>
-              <Text style={styles.tempRangeText}>Hi {getMinMaxTemps().high}° Lo {getMinMaxTemps().low}°</Text>
+              <Text style={styles.tempRangeText}>
+                Hi {getMinMaxTemps().high}° Lo {getMinMaxTemps().low}°
+              </Text>
             </View>
 
             {/* Hourly forecast */}
@@ -774,7 +831,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
           </View>
         </Modal>
       )}
-      </SafeAreaView>
+    </SafeAreaView>
   );
 };
 
@@ -804,15 +861,15 @@ const styles = StyleSheet.create({
     marginTop: adjust(10),
     marginBottom: adjust(15),
   },
-  greeting: {
-    fontSize: adjust(20),
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  headerLocationText: {
+    fontSize: adjust(16),
     fontWeight: '600',
     color: '#333',
-  },
-  subGreeting: {
-    fontSize: adjust(14),
-    color: '#666',
-    marginTop: adjust(2),
+    marginLeft: adjust(5),
   },
   weatherCard: {
     backgroundColor: '#fff',
@@ -824,12 +881,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    position: 'relative',
+  },
+  weatherIconContainer: {
+    position: 'absolute',
+    top: adjust(16),
+    right: adjust(16),
+    alignItems: 'center',
+    marginTop: adjust(5),
+  },
+  weatherDescription: {
+    fontSize: adjust(12),
+    color: '#666',
+    marginTop: adjust(4),
+    textAlign: 'center',
   },
   currentTemp: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: adjust(5),
+    marginTop: adjust(8),
+    marginBottom: adjust(4),
   },
   tempValue: {
     fontSize: adjust(45),
@@ -837,16 +906,11 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   tempMinMax: {
-    marginBottom: adjust(20),
+    marginBottom: adjust(16),
   },
   tempRangeText: {
     fontSize: adjust(14),
     color: '#666',
-    fontWeight: '500',
-  },
-  weatherIcon: {
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   hourlyForecastScroll: {
     paddingHorizontal: adjust(5),
@@ -1051,7 +1115,7 @@ const styles = StyleSheet.create({
     marginBottom: adjust(12),
   },
   modalItemIcon: {
-    marginRight: adjust(10),
+    marginRight: adjust(8),
   },
   modalItemText: {
     flex: 1,
@@ -1062,6 +1126,17 @@ const styles = StyleSheet.create({
     textAlign: 'left',
     paddingVertical: adjust(4),
     paddingRight: adjust(8),
+  },
+  locationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: adjust(16),
+    paddingVertical: adjust(12),
+  },
+  locationText: {
+    fontSize: adjust(18),
+    color: '#333',
+    marginLeft: adjust(8),
   },
 });
 

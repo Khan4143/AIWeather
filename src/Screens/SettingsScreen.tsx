@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -29,6 +29,7 @@ import { UserData } from '../Screens/UserInfo';
 import { DailyRoutineData } from '../Screens/DailyRoutine';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { validateCity } from '../services/weatherService';
+import debounce from 'lodash/debounce';
 
 // Storage keys (should match UserDataManager's keys)
 const STORAGE_KEYS = {
@@ -36,6 +37,9 @@ const STORAGE_KEYS = {
   DAILY_ROUTINE: 'skylar_daily_routine',
   PREFERENCES: 'skylar_preferences',
 };
+
+// Google Places API Key
+const GOOGLE_PLACES_API_KEY = 'AIzaSyAJcSmb8jAEU5qVlzR3sTRcraWxb38B31w';
 
 // Define interfaces for user data
 interface UserDataType {
@@ -229,6 +233,8 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
   const locationInputRef = useRef<TextInput>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const formScrollViewRef = useRef<ScrollView>(null);
+  const [placesResults, setPlacesResults] = useState<any[]>([]);
+  const [isPlacesLoading, setIsPlacesLoading] = useState(false);
   
   // Load user data on component mount
   useEffect(() => {
@@ -752,8 +758,6 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
           const isValid = await validateCity(city.display);
           if (isValid) {
             validatedMatches.push(city);
-          } else {
-            console.log(`City validation failed for: ${city.display}`);
           }
         });
         
@@ -793,7 +797,6 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
         setCitySuggestions(validatedStaticMatches);
       }
     } catch (error) {
-      console.error('Error fetching city suggestions:', error);
       // When an error occurs, still show any static matches we have
       // But validate them first if possible
       try {
@@ -821,23 +824,108 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
     }
   };
 
-  // Handle text input for location with debouncing
-  const handleLocationTextChange = (text: string) => {
-    setLocation(text);
-    setSearchQuery(text);
-    
-    // Always show suggestions if there's text, even if short
-    setShowCitySuggestions(text.length > 0);
-    
-    // Debounce API calls to avoid too many requests
-    if (searchTimeout.current) {
-      clearTimeout(searchTimeout.current);
+  // Fetch from Google Places API
+  const searchPlaces = useCallback(async (query: string) => {
+    if (!query || query.length < 2) {
+      setPlacesResults([]);
+      return;
     }
     
-    // Shorter timeout for better responsiveness
-    searchTimeout.current = setTimeout(() => {
-      fetchCitySuggestions(text);
-    }, 200); // 200ms debounce time
+    try {
+      setIsPlacesLoading(true);
+      
+      // Clear any previous results
+      setPlacesResults([]);
+      
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&types=(cities)&key=${GOOGLE_PLACES_API_KEY}`;
+      console.log('Request URL (without API key):', url.replace(GOOGLE_PLACES_API_KEY, 'API_KEY'));
+      
+      const response = await fetch(url);
+      console.log('Places API Response Status:', response.status);
+      console.log('Places API Response Status Text:', response.statusText);
+      
+      const data = await response.json();
+      console.log('Places API Response:', data);
+      
+      if (data.error) {
+        console.error('Places API Error:', {
+          code: data.error.code,
+          message: data.error.message,
+          status: data.error.status,
+          details: data.error.details
+        });
+        return;
+      }
+      
+      if (data.status === 'OK' && data.predictions) {
+        const formattedResults = data.predictions.map((prediction: any) => ({
+          place_id: prediction.place_id,
+          description: prediction.description,
+          structured_formatting: {
+            main_text: prediction.structured_formatting.main_text,
+            secondary_text: prediction.structured_formatting.secondary_text
+          }
+        }));
+        
+        setPlacesResults(formattedResults);
+      } else if (data.status === 'REQUEST_DENIED') {
+        console.error('REQUEST_DENIED - Common causes:');
+        console.error('1. Places API not enabled in Google Cloud Console');
+        console.error('2. Invalid API key');
+        console.error('3. Billing not enabled');
+        console.error('4. API key restrictions preventing access');
+      }
+    } catch (error) {
+      console.error('Error in searchPlaces:', error);
+    } finally {
+      setIsPlacesLoading(false);
+    }
+  }, []);
+  
+  // Debounced search handler
+  const debouncedSearchPlaces = useCallback(
+    debounce((query: string) => {
+      searchPlaces(query);
+    }, 300),
+    [searchPlaces]
+  );
+  
+  // Handle text input change
+  const handleLocationTextChange = (text: string) => {
+    setLocation(text);
+    
+    if (text.length < 2) {
+      setPlacesResults([]);
+    } else {
+      debouncedSearchPlaces(text);
+    }
+  };
+  
+  // Handle place selection
+  const handlePlaceSelected = async (placeId: string, description: string) => {
+    try {
+      // Get detailed place information
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=formatted_address,name&key=${GOOGLE_PLACES_API_KEY}`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch place details');
+      }
+      
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.result) {
+        const cityName = data.result.name;
+        const formattedAddress = data.result.formatted_address;
+        
+        // Update location
+        setLocation(formattedAddress || description);
+        setShowCitySuggestions(false);
+      }
+    } catch (error) {
+      console.error('Error selecting place:', error);
+    }
   };
 
   // Handle focus on location input to scroll the form into view
@@ -970,35 +1058,39 @@ const SettingsScreen = ({ navigation }: SettingsScreenProps) => {
                 </View>
                 
                 {/* City suggestions dropdown */}
-                {showCitySuggestions && searchQuery.length > 0 && (
-                  <View style={[
-                    styles.suggestionsWrapper,
-                    keyboardVisible && { position: 'relative' }
-                  ]}>
+                {showCitySuggestions && location.length > 0 && (
+                  <View style={styles.suggestionsWrapper}>
                     <View style={styles.suggestionsCard}>
-                      {isLoading ? (
+                      {isPlacesLoading ? (
                         <View style={styles.loadingContainer}>
                           <ActivityIndicator size="small" color="#4361EE" />
                           <Text style={styles.loadingText}>Finding cities...</Text>
                         </View>
-                      ) : citySuggestions.length > 0 ? (
+                      ) : placesResults.length > 0 ? (
                         <ScrollView 
                           style={styles.suggestionsList}
                           showsVerticalScrollIndicator={true}
                           keyboardShouldPersistTaps="handled"
                           nestedScrollEnabled={true}
                         >
-                          {citySuggestions.map((item, index) => (
+                          {placesResults.map((item) => (
                             <TouchableOpacity 
-                              key={item.key}
-                              style={[
-                                styles.suggestionItem,
-                                index === citySuggestions.length - 1 && { borderBottomWidth: 0 }
-                              ]}
-                              onPress={() => handleCitySelect(item)}
+                              key={item.place_id}
+                              style={styles.suggestionItem}
+                              onPress={() => handlePlaceSelected(item.place_id, item.description)}
                             >
                               <Ionicons name="location-outline" size={adjust(16)} color="#666" />
-                              <Text style={styles.suggestionText}>{item.display}</Text>
+                              <View style={styles.suggestionTextContainer}>
+                                <Text style={styles.suggestionMainText}>
+                                  {item.structured_formatting?.main_text || item.description.split(',')[0]}
+                                </Text>
+                                {(item.structured_formatting?.secondary_text || item.description.includes(',')) && (
+                                  <Text style={styles.suggestionSecondaryText}>
+                                    {item.structured_formatting?.secondary_text || 
+                                     item.description.split(',').slice(1).join(',').trim()}
+                                  </Text>
+                                )}
+                              </View>
                             </TouchableOpacity>
                           ))}
                         </ScrollView>
@@ -2218,11 +2310,19 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
     backgroundColor: '#fff',
   },
-  suggestionText: {
+  suggestionTextContainer: {
+    flex: 1,
+    marginLeft: adjust(8),
+  },
+  suggestionMainText: {
     fontSize: adjust(14),
     color: '#333',
-    marginLeft: adjust(12),
-    fontWeight: '400',
+    fontWeight: '500',
+  },
+  suggestionSecondaryText: {
+    fontSize: adjust(12),
+    color: '#666',
+    marginTop: adjust(2),
   },
   loadingContainer: {
     padding: adjust(15),

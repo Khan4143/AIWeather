@@ -6,24 +6,39 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  FlatList,
+  Image,
+  Alert,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView as SafeAreaViewRN } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import adjust from '../utils/adjust';
-import { SCREEN_WIDTH } from '../constants/dimesions';
+import { SCREEN_WIDTH, SCREEN_HEIGHT } from '../constants/dimesions';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useRoute, RouteProp } from '@react-navigation/native';
 import useWeather from '../hooks/useWeather';
 import { format } from 'date-fns';
-import { ForecastData, WeatherData } from '../services/weatherService';
+import { ForecastData, WeatherData, validateCity } from '../services/weatherService';
 import { useWeatherContext } from '../contexts/WeatherContext';
 import { UserData } from '../Screens/UserInfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import debounce from 'lodash/debounce';
+import { UserDataManager } from '../utils/userDataManager';
 
 type ForecastScreenProps = {
   navigation: StackNavigationProp<any>;
 };
+
+// Storage key for saved cities
+const SAVED_CITIES_KEY = 'skylar_saved_cities';
 
 const POPULAR_CITIES = [
   'New York, US', 'Los Angeles, US', 'London, GB', 'Tokyo, JP', 'Paris, FR', 'Berlin, DE', 'Sydney, AU',
@@ -35,16 +50,33 @@ const POPULAR_CITIES = [
   'Santiago, CL', 'Bogota, CO', 'Lima, PE', 'Johannesburg, ZA', 'Cape Town, ZA',
 ];
 const API_KEY = '87b449b894656bb5d85c61981ace7d25';
-interface CityObject { key: string; display: string; }
+interface CityObject { key: string; display: string; isDefault?: boolean; }
+
+// Google Places API Key
+const GOOGLE_PLACES_API_KEY = 'AIzaSyAJcSmb8jAEU5qVlzR3sTRcraWxb38B31w';
+
+type RouteParams = {
+  openCityModal?: boolean;
+  fromHomeScreen?: boolean;
+};
 
 const ForecastScreen = ({ navigation }: ForecastScreenProps) => {
   const [selectedDay, setSelectedDay] = useState(0);
+  const [citySearchModalVisible, setCitySearchModalVisible] = useState(false);
+  const route = useRoute();
+  const params = route.params as RouteParams;
 
   // Use WeatherContext for current location and forecast
   const { forecast, isLoading: isLoadingWeather, error, fetchForecastForCity } = useWeatherContext();
   const [location, setLocation] = useState<string | null>(null);
 
-  // On mount, set location to user's current location (from context forecast)
+  // State for city search and management
+  const [searchQuery, setSearchQuery] = useState('');
+  const [savedCities, setSavedCities] = useState<CityObject[]>([]);
+  const [placesResults, setPlacesResults] = useState<any[]>([]);
+  const [isPlacesLoading, setIsPlacesLoading] = useState(false);
+
+  // When the forecast updates, update our displayed location
   useEffect(() => {
     if (forecast && forecast.location) {
       setLocation(forecast.location);
@@ -57,23 +89,62 @@ const ForecastScreen = ({ navigation }: ForecastScreenProps) => {
     
     // If we don't have forecast data, but we do have a location, fetch it
     if (!forecast && !isLoadingWeather && userDataLocation) {
-      console.log("ForecastScreen - No forecast data, fetching for location:", userDataLocation);
       fetchForecastForCity(userDataLocation);
-    } 
-    // If we don't have a location set in UserData, use a default location
-    else if (!forecast && !isLoadingWeather && !userDataLocation) {
-      console.log("ForecastScreen - No location set, using default location");
-      // Use a default location if no user location is set
-      const defaultLocation = "London, GB";
-      fetchForecastForCity(defaultLocation);
-      
-      // This is temporary - we're not updating UserData permanently
-      console.log("ForecastScreen - Using temporary default location:", defaultLocation);
     }
   }, [forecast, isLoadingWeather, fetchForecastForCity]);
-  
+
+  // Watch for changes to UserData.location
+  useEffect(() => {
+    const userDataLocation = UserData.location;
+    if (userDataLocation) {
+      // Update saved cities to reflect new default location
+      const updatedCities = savedCities.map(city => ({
+        ...city,
+        isDefault: city.display === userDataLocation
+      }));
+      
+      // If the default location isn't in the list, add it
+      if (!updatedCities.some(city => city.display === userDataLocation)) {
+        updatedCities.push({
+          key: `default-${userDataLocation}-${Date.now()}`,
+          display: userDataLocation,
+          isDefault: true
+        });
+      }
+      
+      setSavedCities(updatedCities);
+      saveCities(updatedCities);
+    }
+  }, [UserData.location]);
+
   // Use forecast as weatherData
   const weatherData: ForecastData | null = forecast;
+
+  // Map OpenWeather icon codes to MaterialCommunityIcons
+  const mapWeatherIcon = (iconCode: string) => {
+    const iconMap: { [key: string]: string } = {
+      '01d': 'weather-sunny',
+      '01n': 'weather-night',
+      '02d': 'weather-partly-cloudy',
+      '02n': 'weather-night-partly-cloudy',
+      '03d': 'weather-cloudy',
+      '03n': 'weather-cloudy',
+      '04d': 'weather-cloudy',
+      '04n': 'weather-cloudy',
+      '09d': 'weather-pouring',
+      '09n': 'weather-pouring',
+      '10d': 'weather-rainy',
+      '10n': 'weather-rainy',
+      '11d': 'weather-lightning',
+      '11n': 'weather-lightning',
+      '13d': 'weather-snowy',
+      '13n': 'weather-snowy',
+      '50d': 'weather-fog',
+      '50n': 'weather-fog'
+    };
+
+    return iconMap[iconCode] || 'weather-cloudy';
+  };
 
   // Get weather icon based on condition
   const getWeatherIcon = (iconCode: string): string => {
@@ -298,80 +369,479 @@ const ForecastScreen = ({ navigation }: ForecastScreenProps) => {
     );
   };
 
+  // Load saved cities on mount
+  useEffect(() => {
+    loadSavedCities();
+  }, []);
+
+  // Load saved cities from storage
+  const loadSavedCities = async () => {
+    try {
+      const savedCitiesJson = await AsyncStorage.getItem(SAVED_CITIES_KEY);
+      if (savedCitiesJson) {
+        const cities = JSON.parse(savedCitiesJson);
+        // Update isDefault flag based on UserData.location
+        const updatedCities = cities.map((city: CityObject) => ({
+          ...city,
+          isDefault: city.display === UserData.location
+        }));
+        setSavedCities(updatedCities);
+        saveCities(updatedCities); // Save the updated cities back to storage
+      } else if (UserData.location) {
+        // If no saved cities but we have a default location, add it
+        const defaultCity: CityObject = {
+          key: `default-${UserData.location}-${Date.now()}`,
+          display: UserData.location,
+          isDefault: true
+        };
+        setSavedCities([defaultCity]);
+        saveCities([defaultCity]);
+      }
+    } catch (error) {
+      console.error('Error loading saved cities:', error);
+    }
+  };
+
+  // Save cities to storage
+  const saveCities = async (cities: CityObject[]) => {
+    try {
+      await AsyncStorage.setItem(SAVED_CITIES_KEY, JSON.stringify(cities));
+    } catch (error) {
+      console.error('Error saving cities:', error);
+    }
+  };
+
+  // Remove a saved city
+  const removeSavedCity = useCallback((cityKey: string) => {
+    const cityToRemove = savedCities.find(city => city.key === cityKey);
+    if (cityToRemove?.isDefault) {
+      Alert.alert(
+        "Can't Remove Default Location",
+        "This is your default location set in your profile. You can change it in the Settings screen.",
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
+    const updatedCities = savedCities.filter(city => city.key !== cityKey);
+    setSavedCities(updatedCities);
+    saveCities(updatedCities);
+  }, [savedCities, saveCities]);
+
+  // Fetch from Google Places API
+  const searchPlaces = useCallback(async (query: string) => {
+    if (!query || query.length < 2) {
+      setPlacesResults([]);
+      return;
+    }
+    
+    try {
+      setIsPlacesLoading(true);
+      
+      // Clear any previous results
+      setPlacesResults([]);
+      
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&types=(cities)&key=${GOOGLE_PLACES_API_KEY}`;
+      console.log('Request URL (without API key):', url.replace(GOOGLE_PLACES_API_KEY, 'API_KEY'));
+      
+      const response = await fetch(url);
+      console.log('Places API Response Status:', response.status);
+      console.log('Places API Response Status Text:', response.statusText);
+      
+      const data = await response.json();
+      console.log('Places API Response:', data);
+      
+      if (data.error) {
+        console.error('Places API Error:', {
+          code: data.error.code,
+          message: data.error.message,
+          status: data.error.status,
+          details: data.error.details
+        });
+        return;
+      }
+      
+      if (data.status === 'OK' && data.predictions) {
+        const formattedResults = data.predictions.map((prediction: any) => ({
+          place_id: prediction.place_id,
+          description: prediction.description,
+          structured_formatting: {
+            main_text: prediction.structured_formatting.main_text,
+            secondary_text: prediction.structured_formatting.secondary_text
+          }
+        }));
+        
+        setPlacesResults(formattedResults);
+      } else if (data.status === 'REQUEST_DENIED') {
+        console.error('REQUEST_DENIED - Common causes:');
+        console.error('1. Places API not enabled in Google Cloud Console');
+        console.error('2. Invalid API key');
+        console.error('3. Billing not enabled');
+        console.error('4. API key restrictions preventing access');
+      }
+      
+    } catch (error) {
+      console.error('Error in searchPlaces:', error);
+    } finally {
+      setIsPlacesLoading(false);
+    }
+  }, []);
+  
+  // Debounced search handler
+  const debouncedSearchPlaces = useCallback(
+    debounce((query: string) => {
+      searchPlaces(query);
+    }, 300),
+    [searchPlaces]
+  );
+  
+  // Handle text input change
+  const handleSearchInputChange = (text: string) => {
+    setSearchQuery(text);
+    
+    if (text.length < 2) {
+      setPlacesResults([]);
+    } else {
+      debouncedSearchPlaces(text);
+    }
+  };
+  
+  // Handle place selection
+  const handlePlaceSelected = async (placeId: string, description: string) => {
+    try {
+      // Get detailed place information
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=formatted_address,name&key=${GOOGLE_PLACES_API_KEY}`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch place details');
+      }
+      
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.result) {
+        const cityName = data.result.name;
+        const formattedAddress = data.result.formatted_address;
+        
+        // Create city object
+        const cityObj: CityObject = {
+          key: `${placeId}-${Date.now()}`,
+          display: formattedAddress || description,
+          isDefault: false
+        };
+        
+        // Process the selected city
+        selectCity(cityObj);
+        
+        // Clear search
+        setSearchQuery('');
+        setPlacesResults([]);
+      }
+    } catch (error) {
+      console.error('Error selecting place:', error);
+    }
+  };
+
+  // Select a city to display weather for
+  const selectCity = useCallback((city: CityObject) => {
+    // Update the UserData location directly
+    UserData.location = city.display;
+    
+    // Update local state for UI
+    setLocation(city.display);
+    
+    // Fetch forecast for the selected city
+    fetchForecastForCity(city.display);
+    
+    // Save to persistent storage via UserDataManager
+    UserDataManager.saveUserProfile();
+    
+    // If this isn't a saved city yet, add it
+    const isSaved = savedCities.some(savedCity => savedCity.display === city.display);
+    if (!isSaved) {
+      // Check if this is the default location from UserData
+      const isDefaultLocation = city.display === UserData.location;
+      const updatedCities = [...savedCities, { ...city, isDefault: isDefaultLocation }];
+      setSavedCities(updatedCities);
+      saveCities(updatedCities);
+    }
+    
+    // Close the modal and handle navigation
+    setCitySearchModalVisible(false);
+    if (params?.fromHomeScreen) {
+      navigation.goBack();
+    }
+  }, [fetchForecastForCity, savedCities, saveCities, navigation, params?.fromHomeScreen]);
+
+  // Add a city to saved cities
+  const addCity = useCallback((city: CityObject) => {
+    if (!savedCities.some(savedCity => savedCity.display === city.display)) {
+      const updatedCities = [...savedCities, { ...city, isDefault: false }];
+      setSavedCities(updatedCities);
+      saveCities(updatedCities);
+      
+      // Select the city after adding it
+      selectCity(city);
+    }
+  }, [savedCities, saveCities, selectCity]);
+
+  // Toggle the city search modal
+  const toggleCitySearchModal = () => {
+    setCitySearchModalVisible(!citySearchModalVisible);
+    // If closing modal and we came from HomeScreen, navigate back
+    if (citySearchModalVisible && params?.fromHomeScreen) {
+      navigation.goBack();
+    }
+    if (!citySearchModalVisible) {
+      setSearchQuery('');
+      setPlacesResults([]);
+    }
+  };
+
+  // Effect to handle modal opening from route params
+  useEffect(() => {
+    if (params?.openCityModal) {
+      setCitySearchModalVisible(true);
+    }
+  }, [params?.openCityModal]);
+
   if (!weatherData && isLoadingWeather) {
     return (
       <View style={{ flex: 1, backgroundColor: '#b3d4ff' }}>
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaViewRN style={styles.safeArea}>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#4361EE" />
             <Text style={styles.loadingText}>Loading weather data...</Text>
           </View>
-        </SafeAreaView>
+        </SafeAreaViewRN>
       </View>
     );
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: '#b3d4ff' }}>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaViewRN style={styles.safeArea}>
         {/* Header with location */}
         <View style={styles.header}>
-          <View style={styles.locationContainer}>
+          <TouchableOpacity 
+            style={styles.locationContainer}
+            onPress={toggleCitySearchModal}
+          >
             <MaterialIcons name="location-on" size={adjust(16)} color="#4361EE" />
             <Text style={styles.locationText}>{location}</Text>
-          </View>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.addCityButton}
+            onPress={toggleCitySearchModal} 
+          >
+            <Ionicons name="add" size={adjust(24)} color="#4361EE" />
+          </TouchableOpacity>
         </View>
 
         {/* Main scrollable content */}
         <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-          {/* Daily forecast cards - edge-to-edge */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.forecastDaysScrollContent}
-            style={styles.forecastDaysScroll}
-          >
-            {weatherData?.daily.map((day, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.forecastDayCard,
-                  selectedDay === index && styles.selectedDayCard,
-                ]}
-                onPress={() => setSelectedDay(index)}
-                activeOpacity={0.85}
-              >
-                <Text
+          {/* 5-Day forecast cards */}
+          <View style={styles.forecastCardsContainer}>
+            <Text style={styles.forecastCardsTitle}>5-Day Forecast</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.forecastDaysScrollContent}
+              style={styles.forecastDaysScroll}
+            >
+              {weatherData?.daily.slice(0, 5).map((day, index) => (
+                <TouchableOpacity
+                  key={index}
                   style={[
-                    styles.forecastDayText,
-                    selectedDay === index && styles.selectedDayText,
+                    styles.forecastDayCard,
+                    selectedDay === index && styles.selectedDayCard,
                   ]}
+                  onPress={() => setSelectedDay(index)}
+                  activeOpacity={0.85}
                 >
-                  {index === 0 ? 'Today' : format(new Date(day.date * 1000), 'EEE')}
-                </Text>
-                <MaterialCommunityIcons
-                  name={getWeatherIcon(day.weather.icon)}
-                  size={adjust(28)}
-                  color={selectedDay === index ? '#FFF' : getWeatherIconColor(day.weather.icon)}
-                  style={{ marginVertical: adjust(2) }}
-                />
-                <Text
-                  style={[
-                    styles.forecastDayTemp,
-                    selectedDay === index && styles.selectedDayText,
-                  ]}
-                >
-                  {Math.round(day.temperature.max)}°/{Math.round(day.temperature.min)}°
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <View style={{ height: adjust(16) }} />
+                  <Text
+                    style={[
+                      styles.forecastDayText,
+                      selectedDay === index && styles.selectedDayText,
+                    ]}
+                  >
+                    {index === 0 ? 'Today' : format(new Date(day.date * 1000), 'EEE')}
+                  </Text>
+                  <MaterialCommunityIcons
+                    name={getWeatherIcon(day.weather.icon)}
+                    size={adjust(28)}
+                    color={selectedDay === index ? '#FFF' : getWeatherIconColor(day.weather.icon)}
+                    style={{ marginVertical: adjust(2) }}
+                  />
+                  <Text
+                    style={[
+                      styles.forecastDayTemp,
+                      selectedDay === index && styles.selectedDayText,
+                    ]}
+                  >
+                    {Math.round(day.temperature.max)}°/{Math.round(day.temperature.min)}°
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+          <View style={styles.spacer} />
           {/* Detailed forecast for the selected day */}
           {renderDetailedForecast()}
           <View style={styles.spacer} />
         </ScrollView>
-      </SafeAreaView>
+      </SafeAreaViewRN>
+      
+      {/* City Search Modal */}
+      <Modal
+        visible={citySearchModalVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={toggleCitySearchModal}
+      >
+        <LinearGradient
+          colors={['#b3d4ff', '#5c85e6']}
+          style={{flex: 1}}
+        >
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{flex: 1}}
+          >
+            <SafeAreaViewRN style={styles.cityModalContainer}>
+              {/* Header */}
+              <View style={styles.modalHeaderContainer}>
+                <View style={styles.modalTitleContainer}>
+                  <Text style={styles.cityModalTitle}>Search & Manage Cities</Text>
+                </View>
+                <TouchableOpacity 
+                  onPress={toggleCitySearchModal}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={adjust(20)} color="#333" />
+                </TouchableOpacity>
+              </View>
+              
+              {/* City Search Input */}
+              <View style={styles.citySearchInputContainer}>
+                <Ionicons name="search" size={adjust(20)} color="#666" style={styles.citySearchIcon} />
+                <TextInput
+                  style={styles.citySearchInput}
+                  placeholder="Search for a city..."
+                  placeholderTextColor="#999"
+                  value={searchQuery}
+                  onChangeText={handleSearchInputChange}
+                  returnKeyType="search"
+                  autoCapitalize="words"
+                  autoComplete="off"
+                />
+              </View>
+              
+              {/* City Search Results */}
+              {searchQuery.length > 0 && (
+                <View style={styles.citySuggestionsContainer}>
+                  {isPlacesLoading ? (
+                    <View style={styles.cityLoadingContainer}>
+                      <ActivityIndicator size="small" color="#4361EE" />
+                      <Text style={styles.cityLoadingText}>Searching cities...</Text>
+                    </View>
+                  ) : placesResults.length > 0 ? (
+                    <View style={styles.suggestionsCard}>
+                      <FlatList
+                        data={placesResults}
+                        keyExtractor={(item) => item.place_id}
+                        renderItem={({ item }) => (
+                          <TouchableOpacity 
+                            style={styles.citySuggestionItem}
+                            onPress={() => handlePlaceSelected(item.place_id, item.description)}
+                          >
+                            <View style={styles.citySuggestionTextContainer}>
+                              <Ionicons name="location-outline" size={adjust(16)} color="#4361EE" />
+                              <View style={styles.cityTextWrapper}>
+                                <Text style={styles.cityMainText}>
+                                  {item.structured_formatting?.main_text || item.description.split(',')[0]}
+                                </Text>
+                                {(item.structured_formatting?.secondary_text || item.description.includes(',')) && (
+                                  <Text style={styles.citySecondaryText}>
+                                    {item.structured_formatting?.secondary_text || 
+                                     item.description.split(',').slice(1).join(',').trim()}
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+                            <TouchableOpacity 
+                              style={styles.addCityIcon}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                const parts = item.description.split(',').map((part: string) => part.trim());
+                                const city = parts[0];
+                                const countryCode = parts.length > 1 ? parts[parts.length - 1] : '';
+                                const cityObj: CityObject = {
+                                  key: `${city}-${countryCode}-${Date.now()}`,
+                                  display: item.description,
+                                  isDefault: false
+                                };
+                                addCity(cityObj);
+                              }}
+                            >
+                              <Ionicons name="add-circle" size={adjust(22)} color="#4361EE" />
+                            </TouchableOpacity>
+                          </TouchableOpacity>
+                        )}
+                        style={styles.citySuggestionsList}
+                      />
+                    </View>
+                  ) : (
+                    <View style={styles.noResultsContainer}>
+                      <Text style={styles.noResultsText}>No cities found</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+              
+              {/* Saved Cities Section */}
+              <View style={styles.savedCitiesSection}>
+                <Text style={styles.savedCitiesTitle}>Saved Cities</Text>
+                <View style={styles.savedCitiesList}>
+                  {savedCities.length === 0 ? (
+                    <Text style={styles.noSavedCitiesText}>
+                      No saved cities yet. Search for a city and tap the + icon to save it.
+                    </Text>
+                  ) : (
+                    <FlatList
+                      data={savedCities}
+                      keyExtractor={(item) => item.key}
+                      renderItem={({ item }) => (
+                        <View style={styles.savedCityItem}>
+                          <TouchableOpacity 
+                            style={styles.savedCityTextContainer}
+                            onPress={() => selectCity(item)}
+                          >
+                            <Ionicons 
+                              name={item.isDefault ? "location" : "location-outline"} 
+                              size={adjust(16)} 
+                              color="#4361EE" 
+                            />
+                            <Text style={styles.savedCityText}>{item.display}</Text>
+                          </TouchableOpacity>
+                          {!item.isDefault && (
+                            <TouchableOpacity 
+                              onPress={() => removeSavedCity(item.key)}
+                              style={styles.removeCityButton}
+                            >
+                              <Ionicons name="close-circle" size={adjust(20)} color="#FF6B6B" />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+                    />
+                  )}
+                </View>
+              </View>
+            </SafeAreaViewRN>
+          </KeyboardAvoidingView>
+        </LinearGradient>
+      </Modal>
     </View>
   );
 };
@@ -383,7 +853,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: adjust(20),
+    paddingHorizontal: adjust(15),
     backgroundColor: 'transparent',
   },
   loadingContainer: {
@@ -398,14 +868,20 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'flex-start', // Align to the start
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: adjust(10),
-    marginBottom: adjust(10),
-    paddingHorizontal: adjust(20),
-    height: adjust(40), // Give header a fixed height for stability
+    paddingHorizontal: adjust(16),
+    paddingVertical: adjust(8),
   },
   locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationTextContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -416,25 +892,20 @@ const styles = StyleSheet.create({
     marginLeft: adjust(5),
   },
   forecastDayCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#fff',
-    borderRadius: adjust(16),
-    marginHorizontal: adjust(6),
-    paddingVertical: adjust(16),
-    paddingHorizontal: adjust(18),
-    minWidth: adjust(70),
+    borderRadius: adjust(12),
+    paddingVertical: adjust(12),
+    paddingHorizontal: adjust(16),
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 3,
     elevation: 2,
-    color: '#4361EE',
   },
   selectedDayCard: {
     backgroundColor: '#4361EE',
     shadowOpacity: 0.18,
-    // transform: [{ scale: 1.08 }],
   },
   forecastDayText: {
     fontSize: adjust(12),
@@ -454,23 +925,22 @@ const styles = StyleSheet.create({
   detailedForecastContainer: {
     backgroundColor: 'white',
     borderRadius: adjust(16),
-    padding: adjust(16),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginHorizontal: adjust(0),
+    marginBottom: adjust(0),
   },
   dateHeader: {
     fontSize: adjust(18),
     fontWeight: '600',
     color: '#333',
-    marginBottom: adjust(16),
+    paddingTop: adjust(16),
+    paddingHorizontal: adjust(16),
+    paddingBottom: adjust(12),
   },
   currentConditionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: adjust(20),
+    paddingHorizontal: adjust(16),
+    paddingBottom: adjust(16),
   },
   temperatureContainer: {
     flex: 1,
@@ -483,6 +953,7 @@ const styles = StyleSheet.create({
   minMaxTemp: {
     fontSize: adjust(14),
     color: '#666',
+    marginTop: adjust(4),
   },
   conditionContainer: {
     alignItems: 'center',
@@ -492,22 +963,24 @@ const styles = StyleSheet.create({
     fontSize: adjust(14),
     color: '#333',
     textAlign: 'center',
-    marginTop: adjust(5),
+    marginTop: adjust(8),
   },
   sectionTitle: {
     fontSize: adjust(16),
     fontWeight: '600',
     color: '#333',
-    marginBottom: adjust(12),
-    marginTop: adjust(16),
+    paddingTop: adjust(16),
+    paddingHorizontal: adjust(16),
+    paddingBottom: adjust(12),
   },
   hourlyForecastContainer: {
-    paddingBottom: adjust(8),
+    paddingBottom: adjust(16),
+    paddingHorizontal: adjust(16),
   },
   hourlyForecastItem: {
     alignItems: 'center',
     marginRight: adjust(20),
-    width: adjust(60),
+    width: adjust(40),
   },
   hourlyTime: {
     fontSize: adjust(12),
@@ -534,6 +1007,8 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     marginTop: adjust(8),
+    marginRight: adjust(10),
+    marginLeft: adjust(10),
   },
   detailItem: {
     width: '48%',
@@ -557,13 +1032,249 @@ const styles = StyleSheet.create({
   spacer: {
     height: adjust(40),
   },
+  forecastCardsContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: adjust(16),
+    marginTop: adjust(12),
+    marginBottom: adjust(0),
+    marginHorizontal: adjust(0),
+  },
+  forecastCardsTitle: {
+    fontSize: adjust(18),
+    fontWeight: '600',
+    color: '#333',
+    paddingTop: adjust(16),
+    paddingHorizontal: adjust(16),
+    paddingBottom: adjust(12),
+  },
   forecastDaysScroll: {
-    marginHorizontal: -adjust(20),
-    backgroundColor: 'transparent',
+    paddingBottom: adjust(16),
   },
   forecastDaysScrollContent: {
-    paddingHorizontal: adjust(20),
+    paddingHorizontal: adjust(16),
+    gap: adjust(12),
+  },
+  cityModalContainer: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  modalHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: adjust(16),
+    paddingTop: adjust(16),
+    paddingBottom: adjust(12),
+  },
+  modalTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cityModalTitle: {
+    fontSize: adjust(18),
+    fontWeight: '600',
+    color: '#333',
+  },
+  closeButton: {
+    padding: adjust(8),
+    borderRadius: adjust(20),
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    marginLeft: adjust(12),
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  citySearchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: adjust(10),
+    margin: adjust(16),
+    marginBottom: adjust(8),
+    padding: adjust(12),
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  citySearchIcon: {
+    marginRight: adjust(10),
+    marginLeft: adjust(5),
+    color: '#4361EE',
+  },
+  citySearchInput: {
+    flex: 1,
+    fontSize: adjust(16),
+    color: '#333',
+    padding: adjust(4),
+  },
+  citySuggestionsContainer: {
+    margin: adjust(16),
+    marginTop: adjust(4),
+    marginBottom: adjust(8),
+    maxHeight: SCREEN_HEIGHT * 0.3,
+  },
+  suggestionsCard: {
+    backgroundColor: '#fff',
+    borderRadius: adjust(10),
+    padding: adjust(8),
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    overflow: 'hidden',
+  },
+  cityLoadingContainer: {
+    padding: adjust(16),
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderRadius: adjust(10),
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  cityLoadingText: {
+    marginLeft: adjust(10),
+    fontSize: adjust(14),
+    color: '#666',
+  },
+  noResultsContainer: {
+    padding: adjust(16),
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: adjust(10),
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  noResultsText: {
+    fontSize: adjust(14),
+    color: '#666',
+  },
+  citySuggestionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: adjust(12),
+    paddingHorizontal: adjust(12),
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  citySuggestionTextContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  cityTextWrapper: {
+    flex: 1,
+    marginLeft: adjust(8),
+    justifyContent: 'center',
+  },
+  cityMainText: {
+    fontSize: adjust(16),
+    fontWeight: '500',
+    color: '#333',
+  },
+  citySecondaryText: {
+    fontSize: adjust(13),
+    color: '#666',
+    marginTop: adjust(2),
+  },
+  addCityIcon: {
+    padding: adjust(8),
+  },
+  savedCitiesSection: {
+    margin: adjust(16),
+    marginTop: adjust(8),
+    marginBottom: adjust(24),
+    backgroundColor: '#fff',
+    borderRadius: adjust(10),
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  savedCitiesTitle: {
+    fontSize: adjust(18),
+    fontWeight: '600',
+    color: '#333',
+    padding: adjust(16),
+    paddingBottom: adjust(12),
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  savedCitiesList: {
+    padding: adjust(4),
+    maxHeight: SCREEN_HEIGHT * 0.5,
+  },
+  savedCityItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: adjust(12),
+    paddingHorizontal: adjust(12),
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  savedCityTextContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  savedCityText: {
+    fontSize: adjust(16),
+    color: '#333',
+    marginLeft: adjust(8),
+  },
+  noSavedCitiesText: {
+    fontSize: adjust(14),
+    color: '#666',
+    textAlign: 'center',
+    padding: adjust(16),
+  },
+  removeCityButton: {
+    padding: adjust(8),
+  },
+  addCityButton: {
+    width: adjust(36),
+    height: adjust(36),
+    borderRadius: adjust(18),
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.5,
+  },
+  citySuggestionsList: {
+    marginTop: adjust(0),
+  },
+  googlePlacesContainer: {
+    marginHorizontal: adjust(16),
+    marginTop: adjust(8),
+    marginBottom: adjust(16),
+    zIndex: 10,
+  },
+  googleSearchIcon: {
+    marginLeft: adjust(10),
+    marginRight: adjust(5),
   },
 });
 

@@ -107,7 +107,6 @@ export const WeatherProvider: React.FC<WeatherProviderProps> = ({ children }) =>
   // Update user location when UserData changes
   useEffect(() => {
     const userDataLocation = UserData.location;
-    console.log("Weather Context - User Location:", userDataLocation);
     
     if (userDataLocation && userDataLocation !== '') {
       // Set the user location regardless
@@ -115,16 +114,7 @@ export const WeatherProvider: React.FC<WeatherProviderProps> = ({ children }) =>
       
       // Only fetch if the location has changed or we don't have data yet
       if (userDataLocation !== lastFetchedLocation || !forecast) {
-        console.log("Weather Context - Location changed or no data yet, fetching forecast for:", userDataLocation);
         fetchForecastWithRefreshLogic(userDataLocation);
-      }
-    } else {
-      // If no location is set but we need data, use a default location
-      if (!forecast && !isLoading) {
-        console.log("Weather Context - No location set and no data, using default location");
-        const defaultLocation = 'London, GB';
-        setUserLocation(defaultLocation);
-        fetchForecastWithRefreshLogic(defaultLocation);
       }
     }
   }, [UserData.location, lastFetchedLocation, fetchForecastWithRefreshLogic, forecast, isLoading]);
@@ -134,7 +124,6 @@ export const WeatherProvider: React.FC<WeatherProviderProps> = ({ children }) =>
     if (!userLocation || userLocation === '') return;
     
     const refreshInterval = setInterval(() => {
-      console.log("5 minute interval: Refreshing weather data for:", userLocation);
       fetchForecastWithRefreshLogic(userLocation);
     }, 5 * 60 * 1000); // 5 minutes
     

@@ -8,12 +8,23 @@ const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
  */
 const config = {
   resolver: {
-    sourceExts: ['js', 'jsx', 'ts', 'tsx', 'json'], // Include js files
+    sourceExts: ['js', 'jsx', 'ts', 'tsx', 'json'],
     useTransformReact: true
   },
   transformer: {
     allowOptionalDependencies: true,
-  }
+    experimentalImportSupport: false,
+    inlineRequires: true,
+  },
+  watchFolders: [],
+  maxWorkers: 2,
+  resetCache: false,
+  server: {
+    port: 8081,
+    enhanceMiddleware: (middleware) => {
+      return middleware;
+    },
+  },
 };
 
 module.exports = mergeConfig(getDefaultConfig(__dirname), config);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import type { ReactElement } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -22,6 +23,7 @@ import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
 import Icon from 'react-native-vector-icons/AntDesign';
 import { UserDataManager } from '../utils/userDataManager';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 const STANDARD_SPACING = adjust(12);
 
@@ -39,13 +41,9 @@ const commuteOptions = [
 // Activity options
 const activityOptions = [
   { id: 'bbq', label: 'BBQ', icon: 'restaurant' },
-  { id: 'hiking', label: 'Hiking', icon: 'hiking', iconFamily: 'FontAwesome5' },
   { id: 'outdoor', label: 'Outdoor Party', icon: 'outdoor-grill', iconFamily: 'MaterialIcons' },
-  { id: 'beach', label: 'Beach', icon: 'beach', iconFamily: 'MaterialCommunityIcons' },
-  { id: 'camping', label: 'Camping', icon: 'campground', iconFamily: 'FontAwesome5' },
   { id: 'sports', label: 'Sports', icon: 'sports-soccer', iconFamily: 'MaterialIcons' },
   { id: 'gardening', label: 'Gardening', icon: 'leaf' },
-  { id: 'cycling', label: 'Cycling', icon: 'bicycle' },
 ];
 
 // Create a global object to store user routine data
@@ -127,7 +125,11 @@ const morningActivityMapping = {
   'dogwalk_morning': 'Dog Walk'
 };
 
-const DailyRoutine = ({ navigation }: { navigation: any }) => {
+type DailyRoutineProps = {
+  navigation: NativeStackNavigationProp<any>;
+};
+
+const DailyRoutine = ({ navigation }: DailyRoutineProps): ReactElement => {
   // State for daily routine options
   const [commuteMethod, setCommuteMethod] = useState<string | null>('Car');
   const [commuteHours, setCommuteHours] = useState<number>(8);
@@ -161,7 +163,7 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
   }, [navigation]);
 
   const handleBack = () => {
-    navigation.goBack('UserInfo');
+    navigation.goBack();
   };
 
   const collectAllActivities = (): string[] => {
@@ -406,281 +408,275 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
   };
 
   const renderContent = () => (
-      <View style={styles.mainContent}>
-        {/* Custom Header with Back Button and Title */}
-        <View style={styles.headerContainer}>
-          <TouchableOpacity 
-            style={styles.backButton} 
-            activeOpacity={0.8}
-            onPress={handleBack}
-          >
-            <Ionicons name="chevron-back" size={adjust(20)} color="#333" />
-          </TouchableOpacity>
-        </View>
+    <View style={styles.mainContent}>
+      {/* Custom Header with Back Button and Title */}
+      <View style={styles.headerContainer}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          activeOpacity={0.8}
+          onPress={handleBack}
+        >
+          <Ionicons name="chevron-back" size={adjust(20)} color="#333" />
+        </TouchableOpacity>
+      </View>
 
-        <View style={styles.titleContainer}>
-          <Text style={styles.headerTitle}>Your daily routine matters </Text>
-          <Text style={styles.headerTitle}>to Skylar!</Text>
-        </View>
+      <View style={styles.titleContainer}>
+        <Text style={styles.headerTitle}>Your daily routine matters </Text>
+        <Text style={styles.headerTitle}>to Skylar!</Text>
+      </View>
 
-        <View style={styles.contentContainer}>
-          {/* Morning Activity */}
-          <View style={[styles.questionContainer, styles.sectionContainer]}>
-            <Text style={styles.questionText}>What do you usually do in the mornings?</Text>
-            <View style={styles.optionsContainer}>
-              <TouchableOpacity 
-                style={[styles.optionButton, selectedActivities.includes('running') && styles.selectedOption]} 
-                onPress={() => toggleActivity('running')}
-              >
-                <Ionicons 
-                  name="fitness" 
-                  size={adjust(15)} 
-                  color={selectedActivities.includes('running') ? "#fff" : "#333"} 
-                />
-                <Text style={[styles.optionText, selectedActivities.includes('running') && styles.selectedOptionText]}>Running</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.optionButton, selectedActivities.includes('gym') && styles.selectedOption]} 
-                onPress={() => toggleActivity('gym')}
-              >
-                <MaterialCommunityIcons 
-                  name="dumbbell" 
-                  size={adjust(15)} 
-                  color={selectedActivities.includes('gym') ? "#fff" : "#333"} 
-                />
-                <Text style={[styles.optionText, selectedActivities.includes('gym') && styles.selectedOptionText]}>Gym</Text>
-              </TouchableOpacity>
-            </View>
+      <View style={styles.contentContainer}>
+        {/* Morning Activity */}
+        <View style={[styles.questionContainer, styles.sectionContainer]}>
+          <Text style={styles.questionText}>What do you usually do in the mornings?</Text>
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity 
+              style={[styles.optionButton, selectedActivities.includes('running') && styles.selectedOption]} 
+              onPress={() => toggleActivity('running')}
+            >
+              <Ionicons 
+                name="fitness" 
+                size={adjust(15)} 
+                color={selectedActivities.includes('running') ? "#fff" : "#333"} 
+              />
+              <Text style={[styles.optionText, selectedActivities.includes('running') && styles.selectedOptionText]}>Running</Text>
+            </TouchableOpacity>
             
-            <View style={styles.optionsContainer}>
-              <TouchableOpacity 
-                style={[styles.optionButton, selectedActivities.includes('yoga') && styles.selectedOption]} 
-                onPress={() => toggleActivity('yoga')}
-              >
-                <MaterialCommunityIcons 
-                  name="yoga" 
-                  size={adjust(15)} 
-                  color={selectedActivities.includes('yoga') ? "#fff" : "#333"} 
-                />
-                <Text style={[styles.optionText, selectedActivities.includes('yoga') && styles.selectedOptionText]}>Yoga</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.optionButton, selectedActivities.includes('dogwalk_morning') && styles.selectedOption]} 
-                onPress={() => toggleActivity('dogwalk_morning')}
-              >
-                <MaterialCommunityIcons 
-                  name="dog" 
-                  size={adjust(15)} 
-                  color={selectedActivities.includes('dogwalk_morning') ? "#fff" : "#333"} 
-                />
-                <Text style={[styles.optionText, selectedActivities.includes('dogwalk_morning') && styles.selectedOptionText]}>Dog Walk</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity 
+              style={[styles.optionButton, selectedActivities.includes('gym') && styles.selectedOption]} 
+              onPress={() => toggleActivity('gym')}
+            >
+              <MaterialCommunityIcons 
+                name="dumbbell" 
+                size={adjust(15)} 
+                color={selectedActivities.includes('gym') ? "#fff" : "#333"} 
+              />
+              <Text style={[styles.optionText, selectedActivities.includes('gym') && styles.selectedOptionText]}>Gym</Text>
+            </TouchableOpacity>
           </View>
-
-          {/* Commute Method - Horizontal Slider */}
-          <View style={[styles.questionContainer, styles.sectionContainer, styles.commuteSection]}>
-            <Text style={[styles.questionText, styles.commuteQuestionText]}>How do you usually get to work or school?</Text>
+          
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity 
+              style={[styles.optionButton, selectedActivities.includes('yoga') && styles.selectedOption]} 
+              onPress={() => toggleActivity('yoga')}
+            >
+              <MaterialCommunityIcons 
+                name="yoga" 
+                size={adjust(15)} 
+                color={selectedActivities.includes('yoga') ? "#fff" : "#333"} 
+              />
+              <Text style={[styles.optionText, selectedActivities.includes('yoga') && styles.selectedOptionText]}>Yoga</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.optionButton, selectedActivities.includes('dogwalk_morning') && styles.selectedOption]} 
+              onPress={() => toggleActivity('dogwalk_morning')}
+            >
+              <MaterialCommunityIcons 
+                name="dog" 
+                size={adjust(15)} 
+                color={selectedActivities.includes('dogwalk_morning') ? "#fff" : "#333"} 
+              />
+              <Text style={[styles.optionText, selectedActivities.includes('dogwalk_morning') && styles.selectedOptionText]}>Dog Walk</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
-      {/* This FlatList is placed outside of padding container to avoid cutting off */}
-      <View style={styles.sliderWrapper}>
-        <FlatList
-          ref={commuteSliderRef}
-          data={commuteOptions}
-          renderItem={renderCommuteMethodItem}
-          keyExtractor={item => item.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.commuteSliderContainer}
-        />
-      </View>
+        {/* Commute Method - Horizontal Slider */}
+        <View style={[styles.questionContainer, styles.sectionContainer]}>
+          <Text style={styles.questionText}>How do you usually get to work or school?</Text>
+        </View>
 
-      <View style={styles.mainContent}>
-        <View style={styles.contentContainer}>
-          {/* Commute Time */}
-          <View style={[styles.questionContainer, styles.sectionContainer]}>
-            <View style={styles.timePickerContainer}>
+        {/* This FlatList is placed outside of padding container to avoid cutting off */}
+        <View style={styles.sliderWrapper}>
+          <FlatList
+            ref={commuteSliderRef}
+            data={commuteOptions}
+            renderItem={renderCommuteMethodItem}
+            keyExtractor={item => item.id}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.commuteSliderContainer}
+          />
+        </View>
+
+        {/* Commute Time */}
+        <View style={[styles.questionContainer, styles.sectionContainer]}>
+          <View style={styles.timePickerContainer}>
+            <Text style={styles.timePickerTitle}><Icon name="clockcircleo" size={adjust(16)} color="#517FE0" />   Commute Time</Text>
+            <View style={styles.timePickerControls}>
+              {/* Hours */}
+              <View style={styles.timeSection}>
+                <TouchableOpacity onPress={incrementHours} style={styles.timeButton}>
+                  <Ionicons name="chevron-up" size={adjust(16)} color="#333" />
+                </TouchableOpacity>
+                <View style={styles.timeDisplay}>
+                  <Text style={styles.timeText}>{commuteHours}</Text>
+                </View>
+                <TouchableOpacity onPress={decrementHours} style={styles.timeButton}>
+                  <Ionicons name="chevron-down" size={adjust(16)} color="#333" />
+                </TouchableOpacity>
+              </View>
               
-              <Text style={styles.timePickerTitle}><Icon name="clockcircleo" size={adjust(16)} color="#517FE0" />   Commute Time</Text>
-              <View style={styles.timePickerControls}>
-                {/* Hours */}
-                <View style={styles.timeSection}>
-                  <TouchableOpacity onPress={incrementHours} style={styles.timeButton}>
-                    <Ionicons name="chevron-up" size={adjust(16)} color="#333" />
-                  </TouchableOpacity>
-                  <View style={styles.timeDisplay}>
-                    <Text style={styles.timeText}>{commuteHours}</Text>
-                  </View>
-                  <TouchableOpacity onPress={decrementHours} style={styles.timeButton}>
-                    <Ionicons name="chevron-down" size={adjust(16)} color="#333" />
-                  </TouchableOpacity>
+              <Text style={styles.timeSeparator}>:</Text>
+              
+              {/* Minutes */}
+              <View style={styles.timeSection}>
+                <TouchableOpacity onPress={incrementMinutes} style={styles.timeButton}>
+                  <Ionicons name="chevron-up" size={adjust(16)} color="#333" />
+                </TouchableOpacity>
+                <View style={styles.timeDisplay}>
+                  <Text style={styles.timeText}>{commuteMinutes.toString().padStart(2, '0')}</Text>
                 </View>
-                
-                <Text style={styles.timeSeparator}>:</Text>
-                
-                {/* Minutes */}
-                <View style={styles.timeSection}>
-                  <TouchableOpacity onPress={incrementMinutes} style={styles.timeButton}>
-                    <Ionicons name="chevron-up" size={adjust(16)} color="#333" />
-                  </TouchableOpacity>
-                  <View style={styles.timeDisplay}>
-                    <Text style={styles.timeText}>{commuteMinutes.toString().padStart(2, '0')}</Text>
-                  </View>
-                  <TouchableOpacity onPress={decrementMinutes} style={styles.timeButton}>
-                    <Ionicons name="chevron-down" size={adjust(16)} color="#333" />
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity onPress={decrementMinutes} style={styles.timeButton}>
+                  <Ionicons name="chevron-down" size={adjust(16)} color="#333" />
+                </TouchableOpacity>
+              </View>
 
-                {/* AM/PM Toggle */}
-                <View style={styles.ampmContainer}>
-                  <TouchableOpacity 
-                    style={[styles.ampmButton, isAM && styles.ampmActive]} 
-                    onPress={() => setIsAM(true)}
-                  >
-                    <Text style={[styles.ampmText, isAM && styles.ampmActiveText]}>AM</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.ampmButton, !isAM && styles.ampmActive]} 
-                    onPress={() => setIsAM(false)}
-                  >
-                    <Text style={[styles.ampmText, !isAM && styles.ampmActiveText]}>PM</Text>
-                  </TouchableOpacity>
-                </View>
+              {/* AM/PM Toggle */}
+              <View style={styles.ampmContainer}>
+                <TouchableOpacity 
+                  style={[styles.ampmButton, isAM && styles.ampmActive]} 
+                  onPress={() => setIsAM(true)}
+                >
+                  <Text style={[styles.ampmText, isAM && styles.ampmActiveText]}>AM</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.ampmButton, !isAM && styles.ampmActive]} 
+                  onPress={() => setIsAM(false)}
+                >
+                  <Text style={[styles.ampmText, !isAM && styles.ampmActiveText]}>PM</Text>
+                </TouchableOpacity>
               </View>
             </View>
-            
-            <View style={styles.infoContainer}>
-              <Ionicons name="information-circle-outline" size={adjust(18)} color="#517FE0" />
-              <Text style={styles.infoText}>
-                Skylar will alert you about delays, rain, or air quality before your commute.
-              </Text>
-            </View>
           </View>
-
-          {/* Evening Activities */}
-          <View style={[styles.questionContainer, styles.sectionContainer]}>
-            <Text style={styles.questionText}>What do you enjoy in the evenings?</Text>
-            <View style={styles.selectionCounterContainer}>
-              <Text style={[
-                styles.counterText,
-                selectedActivities.length === 2 ? styles.counterTextFull : null
-              ]}>
-                {selectedActivities.length}/2 selected
-              </Text>
-            </View>
-            <View style={styles.optionsContainer}>
-              <TouchableOpacity 
-                style={[styles.optionButton, selectedActivities.includes('sports') && styles.selectedOption]} 
-                onPress={() => toggleActivity('sports')}
-              >
-                <MaterialCommunityIcons 
-                  name="basketball" 
-                  size={adjust(15)} 
-                  color={selectedActivities.includes('sports') ? "#fff" : "#333"} 
-                />
-                <Text style={[styles.optionText, selectedActivities.includes('sports') && styles.selectedOptionText]}>Sports</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.optionButton, selectedActivities.includes('gardening') && styles.selectedOption]} 
-                onPress={() => toggleActivity('gardening')}
-              >
-                <MaterialCommunityIcons 
-                  name="flower" 
-                  size={adjust(15)} 
-                  color={selectedActivities.includes('gardening') ? "#fff" : "#333"} 
-                />
-                <Text style={[styles.optionText, selectedActivities.includes('gardening') && styles.selectedOptionText]}>Gardening</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.optionsContainer}>
-              <TouchableOpacity 
-                style={[styles.optionButton, selectedActivities.includes('dogwalk') && styles.selectedOption]} 
-                onPress={() => toggleActivity('dogwalk')}
-              >
-                <MaterialCommunityIcons 
-                  name="dog" 
-                  size={adjust(15)} 
-                  color={selectedActivities.includes('dogwalk') ? "#fff" : "#333"} 
-                />
-                <Text style={[styles.optionText, selectedActivities.includes('dogwalk') && styles.selectedOptionText]}>Dog Walk</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.optionButton, selectedActivities.includes('social') && styles.selectedOption]} 
-                onPress={() => toggleActivity('social')}
-              >
-                <MaterialCommunityIcons 
-                  name="account-group" 
-                  size={adjust(15)} 
-                  color={selectedActivities.includes('social') ? "#fff" : "#333"} 
-                />
-                <Text style={[styles.optionText, selectedActivities.includes('social') && styles.selectedOptionText]}>Social Events</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.optionsContainer}>
-              <TouchableOpacity 
-                style={[styles.optionButton, selectedActivities.includes('movie') && styles.selectedOption]} 
-                onPress={() => toggleActivity('movie')}
-              >
-                <MaterialCommunityIcons 
-                  name="movie-open" 
-                  size={adjust(15)} 
-                  color={selectedActivities.includes('movie') ? "#fff" : "#333"} 
-                />
-                <Text style={[styles.optionText, selectedActivities.includes('movie') && styles.selectedOptionText]}>Netflix/Movie</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.optionButton, selectedActivities.includes('reading') && styles.selectedOption]} 
-                onPress={() => toggleActivity('reading')}
-              >
-                <MaterialCommunityIcons 
-                  name="book-open-variant" 
-                  size={adjust(15)} 
-                  color={selectedActivities.includes('reading') ? "#fff" : "#333"} 
-                />
-                <Text style={[styles.optionText, selectedActivities.includes('reading') && styles.selectedOptionText]}>Reading</Text>
-              </TouchableOpacity>
-            </View>
+          
+          <View style={styles.infoContainer}>
+            <Ionicons name="information-circle-outline" size={adjust(18)} color="#517FE0" />
+            <Text style={styles.infoText}>
+              Skylar will alert you about delays, rain, or air quality before your commute.
+            </Text>
           </View>
-
-          {/* Next Button */}
-          <TouchableOpacity 
-            style={styles.nextButton} 
-            activeOpacity={0.8}
-            onPress={handleNext}
-          >
-            <Text style={styles.nextButtonText}>Next</Text>
-            <Feather name="chevron-right" size={adjust(18)} color="#fff" />
-          </TouchableOpacity>
         </View>
+
+        {/* Evening Activities */}
+        <View style={[styles.questionContainer, styles.sectionContainer]}>
+          <Text style={styles.questionText}>What do you enjoy in the evenings?</Text>
+          <View style={styles.selectionCounterContainer}>
+            <Text style={[
+              styles.counterText,
+              selectedActivities.length === 2 ? styles.counterTextFull : null
+            ]}>
+              {selectedActivities.length}/2 selected
+            </Text>
+          </View>
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity 
+              style={[styles.optionButton, selectedActivities.includes('sports') && styles.selectedOption]} 
+              onPress={() => toggleActivity('sports')}
+            >
+              <MaterialCommunityIcons 
+                name="basketball" 
+                size={adjust(15)} 
+                color={selectedActivities.includes('sports') ? "#fff" : "#333"} 
+              />
+              <Text style={[styles.optionText, selectedActivities.includes('sports') && styles.selectedOptionText]}>Sports</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.optionButton, selectedActivities.includes('gardening') && styles.selectedOption]} 
+              onPress={() => toggleActivity('gardening')}
+            >
+              <MaterialCommunityIcons 
+                name="flower" 
+                size={adjust(15)} 
+                color={selectedActivities.includes('gardening') ? "#fff" : "#333"} 
+              />
+              <Text style={[styles.optionText, selectedActivities.includes('gardening') && styles.selectedOptionText]}>Gardening</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity 
+              style={[styles.optionButton, selectedActivities.includes('dogwalk') && styles.selectedOption]} 
+              onPress={() => toggleActivity('dogwalk')}
+            >
+              <MaterialCommunityIcons 
+                name="dog" 
+                size={adjust(15)} 
+                color={selectedActivities.includes('dogwalk') ? "#fff" : "#333"} 
+              />
+              <Text style={[styles.optionText, selectedActivities.includes('dogwalk') && styles.selectedOptionText]}>Dog Walk</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.optionButton, selectedActivities.includes('social') && styles.selectedOption]} 
+              onPress={() => toggleActivity('social')}
+            >
+              <MaterialCommunityIcons 
+                name="account-group" 
+                size={adjust(15)} 
+                color={selectedActivities.includes('social') ? "#fff" : "#333"} 
+              />
+              <Text style={[styles.optionText, selectedActivities.includes('social') && styles.selectedOptionText]}>Social Events</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity 
+              style={[styles.optionButton, selectedActivities.includes('movie') && styles.selectedOption]} 
+              onPress={() => toggleActivity('movie')}
+            >
+              <MaterialCommunityIcons 
+                name="movie-open" 
+                size={adjust(15)} 
+                color={selectedActivities.includes('movie') ? "#fff" : "#333"} 
+              />
+              <Text style={[styles.optionText, selectedActivities.includes('movie') && styles.selectedOptionText]}>Netflix/Movie</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.optionButton, selectedActivities.includes('reading') && styles.selectedOption]} 
+              onPress={() => toggleActivity('reading')}
+            >
+              <MaterialCommunityIcons 
+                name="book-open-variant" 
+                size={adjust(15)} 
+                color={selectedActivities.includes('reading') ? "#fff" : "#333"} 
+              />
+              <Text style={[styles.optionText, selectedActivities.includes('reading') && styles.selectedOptionText]}>Reading</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Next Button */}
+        <TouchableOpacity 
+          style={styles.nextButton} 
+          activeOpacity={0.8}
+          onPress={handleNext}
+        >
+          <Text style={styles.nextButtonText}>Next</Text>
+          <Feather name="chevron-right" size={adjust(18)} color="#fff" />
+        </TouchableOpacity>
       </View>
     </View>
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+    <View style={styles.container}>
       <LinearGradient
         colors={['#b3d4ff', '#5c85e6']}
         style={styles.background}
       >
-      <View 
-        ref={contentRef} 
-        onLayout={handleContentLayout} 
-        style={[styles.measureContainer, { position: 'absolute', opacity: 0 }]}
-      >
-        {renderContent()}
-      </View>
-      
-      {needsScrollView ? (
+        <View 
+          ref={contentRef} 
+          onLayout={handleContentLayout} 
+          style={[styles.measureContainer, { position: 'absolute', opacity: 0 }]}
+        >
+          {renderContent()}
+        </View>
+        
+        {needsScrollView ? (
           <ScrollView 
             ref={scrollViewRef}
             showsVerticalScrollIndicator={false}
@@ -688,41 +684,15 @@ const DailyRoutine = ({ navigation }: { navigation: any }) => {
             contentContainerStyle={styles.scrollContainer}
             overScrollMode="never"
           >
-          {renderContent()}
-        </ScrollView>
-      ) : (
-        renderContent()
-      )}
+            {renderContent()}
+          </ScrollView>
+        ) : (
+          renderContent()
+        )}
 
-      {/* Custom Alert Modal */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={alertVisible}
-        onRequestClose={() => setAlertVisible(false)}
-      >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
-          onPress={() => setAlertVisible(false)}
-        >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <MaterialIcons name="error-outline" size={adjust(24)} color="#517FE0" />
-              <Text style={styles.modalTitle}>Maximum Selection</Text>
-            </View>
-            <Text style={styles.modalMessage}>{alertMessage}</Text>
-            <TouchableOpacity 
-              style={styles.modalButton} 
-              onPress={() => setAlertVisible(false)}
-            >
-              <Text style={styles.modalButtonText}>OK</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      
       </LinearGradient>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -745,71 +715,57 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   contentContainer: {
+    flex: 1,
+    paddingHorizontal: adjust(12),
     width: '100%',
-    paddingHorizontal: adjust(10),
   },
   headerContainer: {
     flexDirection: 'row',
-    // alignItems: 'center',
-    // justifyContent: 'center',
-    paddingHorizontal: adjust(12),
-    paddingTop: Platform.OS === 'ios' ? adjust(1) : (StatusBar.currentHeight || 0) + adjust(1),
-    marginBottom: adjust(5),
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: adjust(12),
   },
   backButton: {
     width: adjust(32),
     height: adjust(32),
-    borderRadius: adjust(16),
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: adjust(14),
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: adjust(1),
+    marginTop: adjust(10),
     marginLeft: adjust(10),
   },
   titleContainer: {
     width: '100%',
-    marginTop: adjust(4),
-    marginBottom: adjust(6),
-    paddingHorizontal: adjust(4),
+    alignItems: 'center',
+    marginBottom: adjust(12),
   },
   headerTitle: {
-    flex: 1,
     fontSize: adjust(16),
-    justifyContent: 'center',
-    alignItems: 'center',
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#333',
     textAlign: 'center',
-
   },
   questionContainer: {
     width: '100%',
-    marginBottom: adjust(10),
   },
   sectionContainer: {
-    marginTop: adjust(0),
-    paddingTop: adjust(8),
-  },
-  commuteSection: {
-    paddingBottom: 0,
-    marginBottom: 0,
+    width: '100%',
+    marginBottom: adjust(12),
   },
   questionText: {
-    fontSize: adjust(13),
+    fontSize: adjust(11),
     fontWeight: '600',
     color: '#333',
     marginBottom: adjust(8),
-    // backgroundColor: '#fff',
-    padding: adjust(4),
-    borderRadius: adjust(10),
-  },
-  commuteQuestionText: {
-    marginBottom: adjust(2),
   },
   optionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: adjust(8),
+    flexWrap: 'wrap',
+    gap: adjust(8),
+    width: '100%',
   },
   optionButton: {
     flex: 1,
@@ -817,10 +773,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
-    borderRadius: adjust(20),
+    borderRadius: adjust(8),
     paddingVertical: adjust(8),
     paddingHorizontal: adjust(10),
-    marginHorizontal: adjust(4),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
@@ -831,7 +786,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#7698ee',
   },
   optionText: {
-    fontSize: adjust(12),
+    fontSize: adjust(10),
     fontWeight: '500',
     color: '#333',
     marginLeft: adjust(4),
@@ -840,63 +795,51 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   sliderWrapper: {
-    width: SCREEN_WIDTH,
-    marginTop: adjust(2),
-    marginBottom: adjust(5),
+    width: '100%',
+    marginBottom: adjust(12),
   },
   commuteSliderContainer: {
-    paddingHorizontal: adjust(18),
     paddingVertical: adjust(4),
-    // backgroundColor: '#fff',
-    borderRadius: adjust(10),
   },
   commuteOptionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
-    borderRadius: adjust(18),
+    borderRadius: adjust(8),
     paddingVertical: adjust(8),
-    paddingHorizontal: adjust(12),
     marginRight: adjust(8),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 1.5,
     elevation: 2,
-    minWidth: adjust(90),
+    minWidth: adjust(80),
   },
   commuteOptionText: {
-    fontSize: adjust(12),
+    fontSize: adjust(10),
     fontWeight: '500',
     color: '#333',
     marginLeft: adjust(4),
   },
-
-  
-
   timePickerContainer: {
     backgroundColor: '#fff',
-    borderRadius: adjust(15),
-    padding: adjust(12),
-    marginBottom: adjust(8),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 1.5,
-    elevation: 2,
+    borderRadius: adjust(12),
+    padding: adjust(8),
+    width: '100%',
   },
   timePickerTitle: {
-    fontSize: adjust(14),
+    fontSize: adjust(11),
     fontWeight: '600',
     color: '#333',
     marginBottom: adjust(8),
-    // textAlign: 'center',
   },
   timePickerControls: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: adjust(4),
+    
   },
   timeSection: {
     alignItems: 'center',
@@ -905,33 +848,31 @@ const styles = StyleSheet.create({
     padding: adjust(4),
   },
   timeDisplay: {
-    width: adjust(28),
-    height: adjust(28),
+    width: adjust(24),
+    height: adjust(24),
     alignItems: 'center',
     justifyContent: 'center',
   },
   timeText: {
-    fontSize: adjust(18),
+    fontSize: adjust(14),
     fontWeight: '600',
     color: '#333',
   },
   timeSeparator: {
-    fontSize: adjust(16),
+    fontSize: adjust(14),
     fontWeight: '600',
     color: '#333',
     marginHorizontal: adjust(8),
   },
   ampmContainer: {
-    marginLeft: adjust(20),
+    marginLeft: adjust(16),
     flexDirection: 'column',
-    borderRadius: adjust(10),
+    borderRadius: adjust(8),
     overflow: 'hidden',
-    // borderWidth: 1,
-    borderColor: '#ddd',
   },
   ampmButton: {
-    paddingVertical: adjust(6),
-    paddingHorizontal: adjust(10),
+    paddingVertical: adjust(4),
+    paddingHorizontal: adjust(8),
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#f5f5f5',
@@ -940,7 +881,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#7698ee',
   },
   ampmText: {
-    fontSize: adjust(12),
+    fontSize: adjust(10),
     fontWeight: '500',
     color: '#333',
   },
@@ -951,11 +892,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.7)',
-    borderRadius: adjust(10),
+    borderRadius: adjust(8),
     padding: adjust(8),
+    marginTop: adjust(8),
+    marginBottom: adjust(8),
   },
   infoText: {
-    fontSize: adjust(11),
+    fontSize: adjust(10),
     color: '#333',
     marginLeft: adjust(4),
     flex: 1,
@@ -1017,59 +960,14 @@ const styles = StyleSheet.create({
     marginBottom: adjust(8),
   },
   counterText: {
-    fontSize: adjust(11),
+    fontSize: adjust(10),
     color: '#666',
     fontWeight: '500',
   },
   counterTextFull: {
     color: '#517FE0',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: adjust(16),
-    padding: adjust(16),
-    width: '80%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: adjust(12),
-  },
-  modalTitle: {
-    fontSize: adjust(16),
-    fontWeight: '600',
-    color: '#333',
-    marginLeft: adjust(8),
-  },
-  modalMessage: {
-    fontSize: adjust(14),
-    color: '#555',
-    marginBottom: adjust(16),
-    lineHeight: adjust(20),
-  },
-  modalButton: {
-    backgroundColor: '#517FE0',
-    borderRadius: adjust(20),
-    paddingVertical: adjust(8),
-    paddingHorizontal: adjust(16),
-    alignSelf: 'flex-end',
-  },
-  modalButtonText: {
-    color: '#ffffff',
-    fontSize: adjust(14),
-    fontWeight: '600',
-  },
+  
 });
 
 export default DailyRoutine;

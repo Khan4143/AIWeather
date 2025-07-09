@@ -21,7 +21,7 @@ import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
 import { useWeatherContext } from '../contexts/WeatherContext';
 import { UserData } from '../Screens/UserInfo';
-import { generateResponse } from '../services/geminiService';
+import { generateResponse } from '../services/openaiService';
 
 interface Message {
   id: string;
@@ -129,8 +129,12 @@ const CommuteScreen = () => {
     setIsLoading(true);
 
     try {
-      // Generate response using Gemini API
-      const response = await generateResponse(userMessage.text, currentWeather || undefined);
+      if (!currentWeather) {
+        throw new Error('Weather data is not available');
+      }
+
+      // Generate response using OpenAI API
+      const response = await generateResponse(userMessage.text, currentWeather);
 
       // Remove loading message and add response
       setMessages(prev => {
@@ -185,7 +189,7 @@ const CommuteScreen = () => {
 
   return (
     <>
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
+      {/* <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} /> */}
       <LinearGradient colors={['#b3d4ff', '#4361EE']} style={styles.background} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <View style={styles.headerContainer}>

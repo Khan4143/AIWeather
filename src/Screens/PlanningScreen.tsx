@@ -23,7 +23,7 @@ import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
 import { useWeatherContext } from '../contexts/WeatherContext';
 import { format } from 'date-fns';
-import { generateResponse } from '../services/geminiService';
+import { generateResponse } from '../services/openaiService';
 
 // Planned event type
 interface PlannedEvent {
@@ -572,7 +572,7 @@ const PlanningScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      {/* <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" /> */}
       <LinearGradient
         colors={['#b3d4ff', '#5c85e6']}
         style={styles.background}

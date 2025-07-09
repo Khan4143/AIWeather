@@ -23,7 +23,7 @@ import { CommonActions } from '@react-navigation/native';
 import { useWeatherContext } from '../contexts/WeatherContext';
 import { UserData } from '../Screens/UserInfo';
 import { useFocusEffect } from '@react-navigation/native';
-import { generateResponse } from '../services/geminiService';
+import { generateResponse } from '../services/openaiService';
 import { PreferenceData } from '../Screens/PreferenceScreen';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -663,7 +663,7 @@ const HomeScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      {/* <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" /> */}
       <LinearGradient
         colors={['#b3d4ff', '#5c85e6']}
         style={styles.background}

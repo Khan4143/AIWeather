@@ -361,7 +361,7 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      {/* <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" /> */}
       <LinearGradient
         colors={['#b3d4ff', '#5c85e6']}
         style={styles.background}

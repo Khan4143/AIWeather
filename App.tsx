@@ -1,18 +1,27 @@
 // Import the crypto polyfill
 import 'react-native-get-random-values';
 
-import { StyleSheet, Text, View } from 'react-native'
-import React, { useEffect } from 'react'
-import Navigations from './src/navigations/Navigations'
-import { WeatherProvider } from './src/contexts/WeatherContext'
+import {StatusBar, StyleSheet, Text, View} from 'react-native';
+import React, {useEffect} from 'react';
+import Navigations from './src/navigations/Navigations';
+import {WeatherProvider} from './src/contexts/WeatherContext';
 // import { updateNgrokUrl } from './src/services/ngrokService';
+import { useNotification } from './src/Notifications/UseNotification';
+import '@react-native-firebase/app';
+
 
 const App = () => {
-  // Log initialization
+
+  useNotification();
+
+
+  // // Log initialization
   useEffect(() => {
     console.log('App component initialized');
-    console.log('WeatherProvider and Navigations components will be mounted next');
-    
+    console.log(
+      'WeatherProvider and Navigations components will be mounted next',
+    );
+
     return () => {
       console.log('App component unmounted');
     };
@@ -23,11 +32,12 @@ const App = () => {
 
   return (
     <WeatherProvider>
+      <StatusBar backgroundColor="transparent" barStyle="light-content" />
       <Navigations />
     </WeatherProvider>
-  )
-}
+  );
+};
 
-export default App
+export default App;
 
-const styles = StyleSheet.create({})
+const styles = StyleSheet.create({});

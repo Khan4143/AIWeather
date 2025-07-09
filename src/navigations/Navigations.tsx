@@ -21,35 +21,35 @@ const Navigations = () => {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   // Load saved data when the app starts
-  useEffect(() => {
-    const loadSavedData = async () => {
-      try {
-        await UserDataManager.loadAllData();
-        console.log('Data loading process completed');
-        setIsDataLoaded(true);
-      } catch (error) {
-        console.error('Error in data loading process:', error);
-        // Continue with the app even if data loading fails
-        setIsDataLoaded(true);
+  // useEffect(() => {
+  //   const loadSavedData = async () => {
+  //     try {
+  //       await UserDataManager.loadAllData();
+  //       console.log('Data loading process completed');
+  //       setIsDataLoaded(true);
+  //     } catch (error) {
+  //       console.error('Error in data loading process:', error);
+  //       // Continue with the app even if data loading fails
+  //       setIsDataLoaded(true);
         
-        // Only show an alert in development mode
-        if (__DEV__) {
-          Alert.alert(
-            'Data Loading Issue',
-            'There was a problem loading your saved data. Your data will be stored in memory for this session.',
-            [{ text: 'OK' }]
-          );
-        }
-      }
-    };
+  //       // Only show an alert in development mode
+  //       if (__DEV__) {
+  //         Alert.alert(
+  //           'Data Loading Issue',
+  //           'There was a problem loading your saved data. Your data will be stored in memory for this session.',
+  //           [{ text: 'OK' }]
+  //         );
+  //       }
+  //     }
+  //   };
 
-    loadSavedData();
-  }, []);
+  //   loadSavedData();
+  // }, []);
 
-  if (!isDataLoaded) {
-    // Return a loading state or splash screen if you prefer
-    return null;
-  }
+  // if (!isDataLoaded) {
+  //   // Return a loading state or splash screen if you prefer
+  //   return null;
+  // }
 
   return (
     <NavigationContainer>

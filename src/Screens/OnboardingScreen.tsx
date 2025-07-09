@@ -152,7 +152,7 @@ const OnboardingScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      {/* <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" /> */}
       <LinearGradient
         colors={['#b3d4ff', '#5c85e6']}
         style={styles.background}

@@ -132,6 +132,8 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
   const scrollViewRef = useRef<ScrollView>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [ageError, setAgeError] = useState(false);
+  const [locationError, setLocationError] = useState(false);
 
   // Add a ref for the input field
   const locationInputRef = useRef<TextInput>(null);
@@ -202,11 +204,17 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
     [searchPlaces]
   );
   
-  // Handle text input change
+  // Reset errors when user types
+  const handleAgeChange = (text: string) => {
+    setAge(text);
+    if (ageError) setAgeError(false);
+  };
+
   const handleLocationTextChange = (text: string) => {
     setManualLocation(text);
+    if (locationError) setLocationError(false);
     setSearchQuery(text);
-    setShowCitySuggestions(true); // Always show suggestions when typing
+    setShowCitySuggestions(true);
     
     if (text.length < 2) {
       setPlacesResults([]);
@@ -374,32 +382,41 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
 
   // Handle next button press
   const handleNext = async () => {
-    // Validate inputs
-    if (!age) {
-      Alert.alert('Missing Information', 'Please enter your age.');
-      return;
-    }
+    // let hasError = false;
 
-    if (!gender) {
-      Alert.alert('Missing Information', 'Please select your gender.');
-      return;
-    }
-    
-    // Save data to UserData global object
+    // if (!age.trim()) {
+    //   setAgeError(true);
+    //   hasError = true;
+    // }
+
+    // if (!manualLocation.trim()) {
+    //   setLocationError(true);
+    //   hasError = true;
+    // }
+
+    // if (hasError) {
+    //   return;
+    // }
+
+    // If we get here, all required fields are filled
     const locationToSave = manualLocation || 'New York, US';
+    
+    // Save to global object
     UserData.setAll({
       age,
       gender,
       occupation,
       location: locationToSave
     });
-    
+
     // Save to AsyncStorage
     try {
       await UserDataManager.saveUserProfile();
+      console.log('User info saved successfully');
     } catch (error) {
+      console.error('Error saving user info:', error);
     }
-    
+
     // Navigate to next screen
     navigation.navigate('DailyRoutine');
   };
@@ -451,8 +468,8 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
   }, [showCitySuggestions]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+    <View style={styles.container} >
+      
       <LinearGradient colors={['#b3d4ff', '#5c85e6']} style={styles.background}>
       <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -490,13 +507,20 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
         <View style={styles.inputContainer}>
           <Text style={styles.inputLabel}>How old are you?</Text>
           <TextInput
-            style={styles.textInput}
+            style={[
+              styles.textInput,
+              ageError && styles.errorInput
+            ]}
+            value={age}
+            onChangeText={handleAgeChange}
             placeholder="Enter your age"
             placeholderTextColor="#8e9aaf"
-            keyboardType="number-pad"
-            value={age}
-            onChangeText={setAge}
+            keyboardType="numeric"
+            maxLength={3}
           />
+          {ageError && (
+            <Text style={styles.errorText}>Age is required</Text>
+          )}
         </View>
 
         {/* Gender Selection */}
@@ -593,11 +617,14 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
           {/* Manual Location Input */}
           <View style={styles.placesInputContainer}>
             <View style={styles.locationIconContainer}>
-              <Ionicons name="search" size={adjust(16)} color="#666" />
+              <Ionicons name="location-outline" size={adjust(16)} color={locationError ? "#ff4444" : "#666"} />
             </View>
             <TextInput
               ref={locationInputRef}
-              style={styles.locationInput}
+              style={[
+                styles.locationInput,
+                locationError && styles.errorInput
+              ]}
               placeholder="Enter your city or area"
               placeholderTextColor="#8e9aaf"
               value={manualLocation}
@@ -605,6 +632,9 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
               onFocus={() => setShowCitySuggestions(true)}
             />
           </View>
+          {locationError && (
+            <Text style={styles.errorText}>Location is required</Text>
+          )}
 
           {/* City suggestions dropdown */}
           {showCitySuggestions && manualLocation.length > 0 && (
@@ -664,20 +694,17 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
 
         {/* Next Button */}
         <TouchableOpacity
-          style={[
-            styles.nextButton,
-            (!age || !gender) && styles.disabledButton
-          ]}
+          style={[styles.nextButton]} 
+          activeOpacity={0.8}
           onPress={handleNext}
-          disabled={!age || !gender}
         >
           <Text style={styles.nextButtonText}>Next</Text>
-          <Ionicons name="arrow-forward" size={adjust(16)} color="#fff" />
+          <Ionicons name="chevron-forward" size={adjust(20)} color="#fff" />
         </TouchableOpacity>
           </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -700,18 +727,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    paddingTop: Platform.OS === 'ios' ? adjust(1) : StatusBar.currentHeight ? StatusBar.currentHeight + adjust(1) : adjust(1),
-    paddingLeft: adjust(5),
-    marginBottom: adjust(20),
+    // marginBottom: adjust(10),
   },
   backButton: {
     width: adjust(32),
     height: adjust(32),
     borderRadius: adjust(18),
+    marginTop: adjust(10),
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: adjust(6),
+    
   },
   titleContainer: {
     width: '100%',
@@ -719,14 +745,14 @@ const styles = StyleSheet.create({
     marginBottom: adjust(4),
   },
   headerText: {
-    fontSize: adjust(20),
+    fontSize: adjust(16),
     fontWeight: '600',
     color: '#333',
     textAlign: 'center',
     marginBottom: adjust(4),
   },
   subHeaderText: {
-    fontSize: adjust(12),
+    fontSize: adjust(10),
     color: '#666',
     textAlign: 'center',
     marginBottom: adjust(16),
@@ -734,19 +760,19 @@ const styles = StyleSheet.create({
   inputContainer: {
     backgroundColor: '#fff',
     borderRadius: adjust(12),
-    padding: adjust(12),
+    padding: adjust(8),
     marginBottom: adjust(12),
   },
   inputLabel: {
-    fontSize: adjust(13),
+    fontSize: adjust(11),
     fontWeight: '600',
     color: '#333',
     marginBottom: adjust(8),
   },
   textInput: {
-    height: adjust(42),
+    height: adjust(32),
     paddingHorizontal: adjust(12),
-    fontSize: adjust(13),
+    fontSize: adjust(10),
     color: '#333',
     backgroundColor: '#f8f9fa',
     borderRadius: adjust(8),
@@ -754,7 +780,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   inputHelperText: {
-    fontSize: adjust(11),
+    fontSize: adjust(10),
     color: '#666',
     marginTop: adjust(6),
   },
@@ -762,12 +788,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: adjust(4),
+    gap: 10
   },
   genderButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: adjust(12),
+    paddingVertical: adjust(8),
     backgroundColor: '#f1f1f1',
     borderRadius: adjust(8),
     marginHorizontal: adjust(4),
@@ -778,9 +805,9 @@ const styles = StyleSheet.create({
     borderColor: '#4361ee',
   },
   genderText: {
-    fontSize: adjust(12),
+    fontSize: adjust(10),
     color: '#333',
-    marginTop: adjust(6),
+    // marginTop: adjust(6),
   },
   locationDetectButton: {
     flexDirection: 'row',
@@ -788,19 +815,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#4361EE',
     borderRadius: adjust(8),
-    paddingVertical: adjust(12),
-    marginTop: STANDARD_SPACING,
+    paddingVertical: adjust(8),
+    marginBottom: adjust(16),
   },
   locationDetectText: {
     color: '#fff',
     fontWeight: '500',
     marginLeft: adjust(8),
-    fontSize: adjust(14),
+    fontSize: adjust(10),
   },
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: STANDARD_SPACING,
+    marginBottom: adjust(12),
   },
   dividerLine: {
     flex: 1,
@@ -810,24 +837,24 @@ const styles = StyleSheet.create({
   dividerText: {
     marginHorizontal: adjust(10),
     color: '#666',
-    fontSize: adjust(12),
+    fontSize: adjust(10),
   },
   placesInputContainer: {
     position: 'relative',
-    marginTop: adjust(8),
+    marginBottom: adjust(8),
     zIndex: 1000,
   },
   locationIconContainer: {
     position: 'absolute',
-    left: adjust(10),
-    top: adjust(13),
+    left: adjust(8),
+    top: adjust(10),
     zIndex: 1001,
   },
   locationInput: {
-    height: adjust(42),
+    height: adjust(32),
     paddingHorizontal: adjust(12),
     paddingLeft: adjust(35),
-    fontSize: adjust(13),
+    fontSize: adjust(10),
     color: '#333',
     backgroundColor: '#f8f9fa',
     borderRadius: adjust(8),
@@ -842,35 +869,33 @@ const styles = StyleSheet.create({
     marginBottom: adjust(12),
   },
   whyText: {
-    fontSize: adjust(12),
+    fontSize: adjust(10),
     color: '#333',
     marginLeft: adjust(8),
   },
   nextButton: {
+    width: '90%',
     flexDirection: 'row',
     backgroundColor: '#517FE0',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: adjust(30),
-    paddingVertical: adjust(15),
-    marginBottom: adjust(15),
+    borderRadius: adjust(22),
+    paddingVertical: adjust(10),
+    paddingHorizontal: adjust(25),
+    marginTop: adjust(16),
+    marginBottom: adjust(20),
+    alignSelf: 'center',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 3,
     elevation: 3,
   },
   nextButtonText: {
     color: '#fff',
+    fontWeight: '600',
     fontSize: adjust(14),
-    fontWeight: 'bold',
-    marginRight: adjust(8),
-  },
-  disabledButton: {
-    backgroundColor: '#ccc',
+    marginRight: adjust(4),
   },
   cityItem: {
     flexDirection: 'row',
@@ -950,6 +975,16 @@ const styles = StyleSheet.create({
   emptyResultText: {
     fontSize: adjust(14),
     color: '#666',
+  },
+  errorInput: {
+    borderColor: '#ff4444',
+    borderWidth: 1,
+  },
+  errorText: {
+    color: '#ff4444',
+    fontSize: adjust(10),
+    marginTop: adjust(4),
+    marginLeft: adjust(4),
   },
 });
 

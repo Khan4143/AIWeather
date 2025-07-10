@@ -1,6 +1,7 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import { useEffect } from 'react';
 import messaging from '@react-native-firebase/messaging';
+import notifee, { AndroidImportance } from '@notifee/react-native';
 
 const requestUserPermission = async () => {
   if (Platform.OS === 'android') {
@@ -40,13 +41,27 @@ export const useNotification = () => {
     requestUserPermission();
     getToken();
 
-    // 👇 Foreground listener
     const unsubscribe = messaging().onMessage(async remoteMessage => {
       console.log('📥 Foreground message received:', remoteMessage);
-
-      // You can also trigger a local notification here using Notifee if you want
+  
+      // Ensure channel exists (only needed once)
+      await notifee.createChannel({
+        id: 'default',
+        name: 'Default Channel',
+        importance: AndroidImportance.HIGH,
+      });
+  
+      // Display the notification
+      await notifee.displayNotification({
+        title: remoteMessage.notification?.title ?? 'New message',
+        body: remoteMessage.notification?.body ?? 'You have a new notification',
+        android: {
+          channelId: 'default',
+          smallIcon: 'ic_launcher', // Ensure this icon exists in android/app/src/main/res/drawable
+        },
+      });
     });
 
-    return unsubscribe; // 👈 Clean up on unmount
+    return unsubscribe;
   }, []);
 };

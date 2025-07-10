@@ -429,6 +429,14 @@ const DailyRoutine = ({ navigation }: DailyRoutineProps): ReactElement => {
         {/* Morning Activity */}
         <View style={[styles.questionContainer, styles.sectionContainer]}>
           <Text style={styles.questionText}>What do you usually do in the mornings?</Text>
+          <View style={styles.selectionCounterContainer}>
+            <Text style={[
+              styles.counterText,
+              selectedActivities.filter(id => ['running', 'gym', 'yoga', 'dogwalk_morning'].includes(id)).length === 1 ? styles.counterTextFull : null
+            ]}>
+              {selectedActivities.filter(id => ['running', 'gym', 'yoga', 'dogwalk_morning'].includes(id)).length}/1 selected
+            </Text>
+          </View>
           <View style={styles.optionsContainer}>
             <TouchableOpacity 
               style={[styles.optionButton, selectedActivities.includes('running') && styles.selectedOption]} 
@@ -565,9 +573,9 @@ const DailyRoutine = ({ navigation }: DailyRoutineProps): ReactElement => {
           <View style={styles.selectionCounterContainer}>
             <Text style={[
               styles.counterText,
-              selectedActivities.length === 2 ? styles.counterTextFull : null
+              selectedActivities.filter(id => ['sports', 'gardening', 'dogwalk', 'social', 'movie', 'reading'].includes(id)).length === 2 ? styles.counterTextFull : null
             ]}>
-              {selectedActivities.length}/2 selected
+              {selectedActivities.filter(id => ['sports', 'gardening', 'dogwalk', 'social', 'movie', 'reading'].includes(id)).length}/2 selected
             </Text>
           </View>
           <View style={styles.optionsContainer}>
@@ -723,7 +731,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    marginBottom: adjust(12),
+    // marginBottom: adjust(12),
   },
   backButton: {
     width: adjust(32),
@@ -750,8 +758,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   sectionContainer: {
+  marginTop: adjust(8),
     width: '100%',
-    marginBottom: adjust(12),
   },
   questionText: {
     fontSize: adjust(11),
@@ -795,11 +803,14 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   sliderWrapper: {
-    width: '100%',
+    width: SCREEN_WIDTH,
     marginBottom: adjust(12),
+    marginLeft: -adjust(12), // Compensate for the universal padding
+    overflow: 'hidden',
   },
   commuteSliderContainer: {
     paddingVertical: adjust(4),
+    paddingLeft: adjust(12), // Add back padding on the left to align with content
   },
   commuteOptionButton: {
     flexDirection: 'row',

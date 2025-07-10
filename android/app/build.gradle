@@ -124,4 +124,10 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // ✅ Required for Firebase Cloud Messaging
+    implementation("com.google.firebase:firebase-messaging:23.4.1")
+
+    // ✅ Required for Notifee (for notifications)
+    implementation("androidx.core:core:1.10.1")
 }

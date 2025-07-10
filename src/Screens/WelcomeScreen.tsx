@@ -18,8 +18,9 @@ import {SCREEN_HEIGHT, SCREEN_WIDTH} from '../constants/dimesions';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Icons from 'react-native-vector-icons/Feather';
 import {UserDataManager} from '../utils/userDataManager';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const WelcomeScreen = ({navigation}: {navigation: any}) => {
+const WelcomeScreen = ({navigation, route}: {navigation: any; route: any}) => {
   React.useEffect(() => {
     // Hide header on mount
     if (navigation && navigation.setOptions) {
@@ -29,30 +30,32 @@ const WelcomeScreen = ({navigation}: {navigation: any}) => {
     }
 
     // Check if user data already exists, then redirect to main app
-    // But only if not intentionally accessing onboarding from profile
     const checkExistingUser = async () => {
-      const route = navigation
-        .getState()
-        .routes.find((r: any) => r.name === 'Welcome');
-      const bypassCheck = route?.params?.bypassOnboardingCheck;
+      try {
+        // Load data from AsyncStorage first
+        await UserDataManager.loadAllData();
+        
+        // ONBOARDING_DISABLED: Comment out the auto-redirect to make onboarding always accessible
+        // To re-enable onboarding redirect, uncomment the following block:
+        /*
+        const userData = UserDataManager.getAllUserData();
+        const hasCompleteUserData =
+          userData.profile &&
+          userData.profile.location &&
+          userData.dailyRoutine &&
+          userData.preferences;
 
-      // Skip the redirect if we're intentionally going to onboarding
-      if (bypassCheck) return;
-
-      const userData = UserDataManager.getAllUserData();
-      const hasUserData =
-        userData.profile &&
-        userData.profile.location &&
-        userData.dailyRoutine &&
-        userData.preferences;
-
-      if (hasUserData) {
-        navigation.replace('MainApp');
+        if (hasCompleteUserData) {
+          navigation.replace('MainApp');
+        }
+        */
+      } catch (error) {
+        console.error('Error checking user data:', error);
       }
     };
 
     checkExistingUser();
-  }, [navigation]);
+  }, [navigation, route?.params?.bypassOnboardingCheck]);
 
   const handleNavigate = () => {
     navigation.navigate('UserInfo');

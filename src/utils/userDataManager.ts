@@ -8,7 +8,11 @@ const STORAGE_KEYS = {
   USER_PROFILE: 'skylar_user_profile',
   DAILY_ROUTINE: 'skylar_daily_routine',
   PREFERENCES: 'skylar_preferences',
+  HAS_COMPLETED_ONBOARDING: 'skylar_has_completed_onboarding',
 };
+
+// ONBOARDING CONFIG: Set this to true to enable "show once" behavior
+const ENABLE_ONBOARDING_ONCE = false;
 
 // Check if AsyncStorage is available
 const isAsyncStorageAvailable = () => {
@@ -19,6 +23,9 @@ const isAsyncStorageAvailable = () => {
  * Central manager for accessing all user data across the app
  */
 export const UserDataManager = {
+  // Add loading state
+  isLoading: false,
+
   /**
    * Get all user profile information from memory
    */
@@ -52,6 +59,36 @@ export const UserDataManager = {
   },
   
   /**
+   * Save onboarding completion state
+   */
+  async setOnboardingComplete(complete: boolean) {
+    if (!isAsyncStorageAvailable()) return false;
+    
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.HAS_COMPLETED_ONBOARDING, JSON.stringify(complete));
+      return true;
+    } catch (error) {
+      console.error('Error saving onboarding state:', error);
+      return false;
+    }
+  },
+
+  /**
+   * Check if onboarding is complete
+   */
+  async hasCompletedOnboarding() {
+    if (!isAsyncStorageAvailable()) return false;
+    
+    try {
+      const value = await AsyncStorage.getItem(STORAGE_KEYS.HAS_COMPLETED_ONBOARDING);
+      return value === 'true';
+    } catch (error) {
+      console.error('Error checking onboarding state:', error);
+      return false;
+    }
+  },
+
+  /**
    * Save all current data to AsyncStorage
    */
   async saveAllData() {
@@ -65,6 +102,19 @@ export const UserDataManager = {
       await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(userData.profile));
       await AsyncStorage.setItem(STORAGE_KEYS.DAILY_ROUTINE, JSON.stringify(userData.dailyRoutine));
       await AsyncStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(userData.preferences));
+      
+      // Only set onboarding as complete if the feature is enabled
+      if (ENABLE_ONBOARDING_ONCE) {
+        if (
+          userData.profile &&
+          userData.profile.location &&
+          userData.dailyRoutine &&
+          userData.preferences
+        ) {
+          await this.setOnboardingComplete(true);
+        }
+      }
+      
       console.log('All user data saved to AsyncStorage');
       return true;
     } catch (error) {
@@ -143,6 +193,8 @@ export const UserDataManager = {
     }
     
     try {
+      this.isLoading = true;
+      
       // Load user profile
       const profileJson = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
       if (profileJson) {
@@ -169,6 +221,8 @@ export const UserDataManager = {
     } catch (error) {
       console.error('Error loading data from AsyncStorage:', error);
       return false;
+    } finally {
+      this.isLoading = false;
     }
   },
   

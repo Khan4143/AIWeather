@@ -249,132 +249,136 @@ const PreferenceScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const renderContent = () => (
-        <View style={styles.container}>
-          {/* Custom Header with Back Button */}
-          <View style={styles.headerContainer}>
-            <TouchableOpacity 
-              style={styles.backButton} 
-              activeOpacity={0.8}
-              onPress={handleBack}
-            >
-              <Ionicons name="chevron-back" size={adjust(20)} color="#333" />
-            </TouchableOpacity>
-          </View>
-          
-          {/* Title Section */}
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>What should Skylar help you manage?</Text>
+    <View style={styles.container}>
+      {/* Custom Header with Back Button */}
+      <View style={styles.headerContainer}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          activeOpacity={0.8}
+          onPress={handleBack}
+        >
+          <Ionicons name="chevron-back" size={adjust(20)} color="#333" />
+        </TouchableOpacity>
+      </View>
+      
+      {/* Title Section */}
+      <View style={styles.titleContainer}>
+        <Text style={styles.title}>What should Skylar help you manage?</Text>
+      </View>
+
+      {/* Main Content */}
+      <View 
+        ref={contentRef}
+        style={styles.contentContainer}
+        onLayout={handleContentLayout}
+      >
+        <View style={styles.mainContent}>
+          {/* Subtitle Section */}
+          <View style={styles.subtitleSection}>
+            <Text style={styles.subtitle}>
+              Your answers help Skylar personalize health, clothing, and activity tips just for you.
+            </Text>
           </View>
 
-          {/* Main Content */}
-          <View 
-            ref={contentRef}
-            style={styles.contentContainer}
-            onLayout={handleContentLayout}
+          {/* Style Selection */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Choose Your Style</Text>
+            <View style={styles.styleOptionsWrapper}>
+              {styleOptions.map((style) => (
+                <TouchableOpacity
+                  key={style.id}
+                  style={[styles.styleOptionCard, selectedStyle === style.id && styles.activeStyleOptionCard]}
+                  onPress={() => selectStyle(style.id)}
+                >
+                  <View style={styles.styleTextContainer}>
+                    {style.id === 'casual' && (
+                      <Ionicons name="shirt-outline" size={adjust(22)} color="#517FE0" style={styles.styleIcon} />
+                    )}
+                    {style.id === 'professional' && (
+                      <Ionicons name="briefcase-outline" size={adjust(22)} color="#517FE0" style={styles.styleIcon} />
+                    )}
+                    {style.id === 'sporty' && (
+                      <Ionicons name="body-outline" size={adjust(22)} color="#517FE0" style={styles.styleIcon} />
+                    )}
+                    <View>
+                      <Text style={styles.styleLabel}>{style.label}</Text>
+                      <Text style={styles.styleDescription}>{style.description}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.radioContainer}>
+                    <View style={styles.radioOuter}>
+                      {selectedStyle === style.id && <View style={styles.radioInner} />}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Health Concerns */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Health Concerns</Text>
+            <View style={styles.sliderWrapper}>
+              <FlatList
+                ref={healthSliderRef}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                data={healthOptions}
+                renderItem={renderHealthItem}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.pillsContainer}
+                snapToAlignment="start"
+                decelerationRate="fast"
+              />
+            </View>
+          </View>
+
+          {/* Activities */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Your Activities</Text>
+            <View style={styles.sliderWrapper}>
+              <FlatList
+                ref={activitySliderRef}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                data={activityOptions}
+                renderItem={renderActivityItem}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.pillsContainer}
+                snapToAlignment="start"
+                decelerationRate="fast"
+              />
+            </View>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+
+  return (
+    <View style={styles.safeArea}>
+      <LinearGradient
+        colors={['#b3d4ff', '#5c85e6']}
+        style={styles.background}
+      >
+        <View style={{ flex: 1 }}>
+          <ScrollView
+            ref={scrollViewRef}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            contentContainerStyle={{ flexGrow: 1 }}
           >
-            {/* Subtitle Section */}
-            <View style={styles.subtitleSection}>
-              <Text style={styles.subtitle}>
-                Your answers help Skylar personalize health, clothing, and activity tips just for you.
-              </Text>
-            </View>
-
-            {/* Style Selection */}
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>Choose Your Style</Text>
-              <View style={styles.styleOptionsWrapper}>
-                {styleOptions.map((style) => (
-                  <TouchableOpacity
-                    key={style.id}
-                    style={[styles.styleOptionCard, selectedStyle === style.id && styles.activeStyleOptionCard]}
-                    onPress={() => selectStyle(style.id)}
-                  >
-                    <View style={styles.styleTextContainer}>
-                      {style.id === 'casual' && (
-                    <Ionicons name="shirt-outline" size={adjust(22)} color="#517FE0" style={styles.styleIcon} />
-                      )}
-                      {style.id === 'professional' && (
-                    <Ionicons name="briefcase-outline" size={adjust(22)} color="#517FE0" style={styles.styleIcon} />
-                      )}
-                      {style.id === 'sporty' && (
-                    <Ionicons name="body-outline" size={adjust(22)} color="#517FE0" style={styles.styleIcon} />
-                      )}
-                      <View>
-                        <Text style={styles.styleLabel}>{style.label}</Text>
-                        <Text style={styles.styleDescription}>{style.description}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.radioContainer}>
-                      <View style={styles.radioOuter}>
-                        {selectedStyle === style.id && <View style={styles.radioInner} />}
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Health Concerns */}
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>Health Concerns</Text>
-              <View style={styles.sliderWrapper}>
-                <FlatList
-                  ref={healthSliderRef}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  data={healthOptions}
-                  renderItem={renderHealthItem}
-                  keyExtractor={(item) => item.id}
-                  contentContainerStyle={styles.pillsContainer}
-                  snapToAlignment="start"
-                  decelerationRate="fast"
-                />
-              </View>
-            </View>
-
-            {/* Activities */}
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>Your Activities</Text>
-              <View style={styles.sliderWrapper}>
-                <FlatList
-                  ref={activitySliderRef}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  data={activityOptions}
-                  renderItem={renderActivityItem}
-                  keyExtractor={(item) => item.id}
-                  contentContainerStyle={styles.pillsContainer}
-                  snapToAlignment="start"
-                  decelerationRate="fast"
-                />
-              </View>
-            </View>
-
-            {/* Next Button */}
+            {renderContent()}
+          </ScrollView>
+          <View style={styles.bottomContainer}>
             <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
               <Text style={styles.nextButtonText}>Next</Text>
               <Feather name="arrow-right" size={adjust(16)} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>
-  );
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" /> */}
-      <LinearGradient
-        colors={['#b3d4ff', '#5c85e6']}
-        style={styles.background}
-      >
-    <ScrollView
-          ref={scrollViewRef}
-      showsVerticalScrollIndicator={false}
-          bounces={false}
-    >
-      {renderContent()}
-    </ScrollView>
       </LinearGradient>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -388,66 +392,65 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: adjust(10),
+    paddingHorizontal: adjust(12),
   },
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    paddingHorizontal: adjust(2),
-    paddingTop: Platform.OS === 'ios' ? adjust(1) : StatusBar.currentHeight ? StatusBar.currentHeight + adjust(1) : adjust(1),
-    paddingBottom: adjust(4),
+    marginBottom: adjust(6),
   },
-
   backButton: {
     width: adjust(32),
     height: adjust(32),
-    borderRadius: adjust(18),
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: adjust(14),
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: adjust(10),
+    marginTop: adjust(10),
   },
   contentContainer: {
     flex: 1,
-    paddingBottom: adjust(20),
+    paddingBottom: Platform.OS === 'ios' ? adjust(34) : adjust(20),
+  },
+  mainContent: {
+    flex: 1,
+  },
+  bottomContainer: {
+    paddingBottom: Platform.OS === 'ios' ? adjust(34) : adjust(24),
+    paddingTop: adjust(12),
   },
   subtitleSection: {
-    marginBottom: adjust(24),
+    marginBottom: adjust(20),
     alignItems: 'center',
-    paddingHorizontal: adjust(10),
   },
   titleContainer: {
     width: '100%',
-    marginTop: adjust(4),
+    alignItems: 'center',
     marginBottom: adjust(12),
-    paddingHorizontal: adjust(4),
   },
   title: {
-    fontSize: adjust(18),
-    fontWeight: '700',
+    fontSize: adjust(16),
+    fontWeight: '600',
     color: '#333',
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: adjust(12),
+    fontSize: adjust(11),
     color: '#333',
     textAlign: 'center',
-    paddingHorizontal: adjust(5),
-    lineHeight: adjust(18),
+    lineHeight: adjust(16),
   },
   sectionContainer: {
-    marginBottom: adjust(18),
+    marginBottom: adjust(12),
   },
   sectionTitle: {
-    fontSize: adjust(16),
+    fontSize: adjust(11),
     fontWeight: '600',
     color: '#333',
-    marginBottom: adjust(12),
-    paddingHorizontal: adjust(4),
+    marginBottom: adjust(8),
   },
   styleOptionsWrapper: {
-    marginHorizontal: adjust(4),
     marginBottom: adjust(4),
   },
   styleOptionCard: {
@@ -478,12 +481,12 @@ const styles = StyleSheet.create({
     marginRight: adjust(10),
   },
   styleLabel: {
-    fontSize: adjust(14),
+    fontSize: adjust(10),
     fontWeight: '600',
     color: '#333',
   },
   styleDescription: {
-    fontSize: adjust(12),
+    fontSize: adjust(10),
     color: '#666',
   },
   radioContainer: {
@@ -506,13 +509,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#517FE0',
   },
   sliderWrapper: {
-    width: SCREEN_WIDTH,
-    marginLeft: adjust(-16),
+    marginLeft: -adjust(12),
+    marginRight: -adjust(12),
   },
   pillsContainer: {
-    paddingLeft: adjust(16),
-    paddingRight: adjust(30),
-    paddingVertical: adjust(6),
+    paddingLeft: adjust(12),
+    paddingVertical: adjust(4),
   },
   pillButton: {
     flexDirection: 'row',
@@ -535,7 +537,7 @@ const styles = StyleSheet.create({
     marginRight: adjust(5),
   },
   pillText: {
-    fontSize: adjust(14),
+    fontSize: adjust(10),
     fontWeight: '500',
     color: '#333',
   },
@@ -545,13 +547,13 @@ const styles = StyleSheet.create({
   nextButton: {
     flexDirection: 'row',
     backgroundColor: '#517FE0',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'center',
     borderRadius: adjust(22),
     paddingVertical: adjust(10),
     paddingHorizontal: adjust(25),
-    marginTop: adjust(16),
-    marginBottom: adjust(10),
+    width: '90%',
+    alignSelf: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -563,6 +565,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: adjust(14),
     marginRight: adjust(4),
+  },
+  sliderSection: {
+    marginBottom: adjust(12),
   },
 });
 

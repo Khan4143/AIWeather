@@ -370,7 +370,7 @@ const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
         start={{x: 0, y: 0}}
         end={{x: 0, y: 1}}
       >
-        <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <SafeAreaView style={styles.safeArea}>
           <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
             {/* Header with settings */}
             <View style={styles.headerRow}>

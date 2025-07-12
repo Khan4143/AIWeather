@@ -1,7 +1,8 @@
 const functions = require("firebase-functions");
 const { OpenAI } = require("openai");
 const { openai_api_key } = require("./apikey");
-
+const admin = require("firebase-admin");
+admin.initializeApp();
 
 
 // Initialize OpenAI client
@@ -124,3 +125,19 @@ exports.getChatResponseStream = functions.https.onRequest(async (req, res) => {
     res.end();
   }
 });
+
+
+exports.saveDeviceToken = functions.https.onRequest(async (req, res) => {
+  const { deviceId, token } = req.body;
+
+  if (!deviceId || !token) return res.status(400).send("Missing data");
+
+  await admin.firestore().collection("deviceTokens").doc(deviceId).set({
+    token,
+    createdAt: Date.now(),
+  });
+
+  res.send("Token saved for device");
+});
+
+  

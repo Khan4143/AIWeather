@@ -12,7 +12,7 @@ import '@react-native-firebase/app';
 
 const App = () => {
 
-  useNotification();
+
 
 
   // // Log initialization

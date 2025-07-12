@@ -17,8 +17,11 @@ import adjust from '../utils/adjust';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
 import Umbrella from 'react-native-vector-icons/FontAwesome5'
 import { UserDataManager } from '../utils/userDataManager';
+import { useNotification, requestNotificationPermission } from '../Notifications/UseNotification';
 
 const OnboardingScreen = ({ navigation }: { navigation: any }) => {
+  useNotification(); 
+
   const [contentHeight, setContentHeight] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -43,9 +46,9 @@ const OnboardingScreen = ({ navigation }: { navigation: any }) => {
     navigation.goBack();
   };
 
-  const handleEnableNotifications = () => {
-    // Logic to request notification permissions would go here
-    // Then navigate to next screen
+  const handleEnableNotifications = async () => {
+    await requestNotificationPermission();
+ 
     navigation.navigate('Intro');
   };
 

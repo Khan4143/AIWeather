@@ -26,6 +26,7 @@ import { UserDataManager } from '../utils/userDataManager';
 import Geolocation from 'react-native-geolocation-service';
 import { validateCity } from '../services/weatherService';
 import debounce from 'lodash/debounce';
+import { useDeviceMeta } from '../Notifications/Location';
 
 const STANDARD_SPACING = adjust(15);
 
@@ -58,54 +59,7 @@ export const UserData = {
   }
 };
 
-// List of popular cities available in OpenWeather API
-const POPULAR_CITIES = [
-  'New York, US',
-  'Los Angeles, US',
-  'London, GB',
-  'Tokyo, JP',
-  'Paris, FR',
-  'Berlin, DE',
-  'Sydney, AU',
-  'Mumbai, IN',
-  'Beijing, CN',
-  'Rio de Janeiro, BR',
-  'Cairo, EG',
-  'Moscow, RU',
-  'Toronto, CA',
-  'Rome, IT',
-  'Madrid, ES',
-  'Amsterdam, NL',
-  'Dubai, AE',
-  'Mexico City, MX',
-  'Bangkok, TH',
-  'Singapore, SG',
-  'Stockholm, SE',
-  'Istanbul, TR',
-  'Seoul, KR',
-  'Buenos Aires, AR',
-  'Nairobi, KE',
-  'Vienna, AT',
-  'Athens, GR',
-  'Copenhagen, DK',
-  'Brussels, BE',
-  'Helsinki, FI',
-  'Lisbon, PT',
-  'Zurich, CH',
-  'Oslo, NO',
-  'Warsaw, PL',
-  'Prague, CZ',
-  'Budapest, HU',
-  'Auckland, NZ',
-  'Jakarta, ID',
-  'Manila, PH',
-  'Kuala Lumpur, MY',
-  'Santiago, CL',
-  'Bogota, CO',
-  'Lima, PE',
-  'Johannesburg, ZA',
-  'Cape Town, ZA',
-];
+
 
 const API_KEY = '87b449b894656bb5d85c61981ace7d25';
 
@@ -328,10 +282,10 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
   // Detect current location
   const handleDetectLocation = async () => {
     setIsLocating(true);
-    
+  
     try {
       const hasPermission = await requestLocationPermission();
-      
+  
       if (!hasPermission) {
         Alert.alert(
           'Permission Denied',
@@ -341,16 +295,25 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
         setIsLocating(false);
         return;
       }
-      
+
+      const { saveDeviceMeta } = useDeviceMeta();
+  
       Geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
           const cityObj = await reverseGeocode(latitude, longitude);
-          
+  
           if (cityObj) {
             setManualLocation(cityObj.display);
             setSearchQuery('');
             setShowCitySuggestions(false);
+  
+            // Save to Firestore
+            await saveDeviceMeta({
+              latitude,
+              longitude,
+              cityDisplay: cityObj.display,
+            });
           } else {
             Alert.alert(
               'Location Error',
@@ -358,6 +321,7 @@ const UserInfo = ({ navigation }: { navigation: any }) => {
               [{ text: 'OK' }]
             );
           }
+  
           setIsLocating(false);
         },
         (error) => {

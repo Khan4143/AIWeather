@@ -5,45 +5,64 @@ import { useEffect } from 'react';
 import DeviceInfo from 'react-native-device-info';
 
 export const requestNotificationPermission = async () => {
-  if (Platform.OS === 'android' && Platform.Version >= 33) {
-    const granted = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
-    );
+  try {
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+      );
 
-    if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-      console.log('❌ Notification permission denied');
-      return;
+      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('❌ Notification permission denied');
+        return false;
+      }
+
+      console.log('✅ Android 13+ permission granted');
     }
 
-    console.log('✅ Android 13+ permission granted');
-  }
+    if (Platform.OS === 'ios') {
+      const authStatus = await messaging().requestPermission();
+      const enabled =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
 
-  if (Platform.OS === 'ios') {
-    const authStatus = await messaging().requestPermission();
-    const enabled =
-      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      if (!enabled) {
+        console.log('❌ iOS notification permission denied');
+        return false;
+      }
 
-    if (!enabled) {
-      console.log('❌ iOS notification permission denied');
-      return;
+      console.log('✅ iOS notification permission granted');
     }
 
-    console.log('✅ iOS notification permission granted');
+    const token = await messaging().getToken();
+    const deviceId = await DeviceInfo.getUniqueId();
+    console.log('📲 FCM Token:', token);
+    console.log('📱 Device ID:', deviceId);
+
+    // Send token + deviceId to backend
+    try {
+      console.log('Sending FCM token to backend...');
+      const response = await fetch('https://us-central1-ai-weather-app-f69fc.cloudfunctions.net/saveDeviceToken', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId, token })
+      });
+      
+      const responseData = await response.json().catch(() => null);
+      
+      if (!response.ok) {
+        throw new Error(`Server responded with status: ${response.status}, message: ${JSON.stringify(responseData)}`);
+      }
+      
+      console.log('✅ FCM token saved to backend:', responseData);
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to save FCM token to backend:', error);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Error in notification permission flow:', error);
+    return false;
   }
-
-  const token = await messaging().getToken();
-  const deviceId = await DeviceInfo.getUniqueId();
-  console.log('📲 FCM Token:', token);
-  console.log('📱 Device ID:', deviceId);
-
-  // Optionally: Send token + deviceId to backend here
-
-  fetch('https://us-central1-ai-weather-app-f69fc.cloudfunctions.net/saveDeviceToken', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deviceId, token })
-  });
 };
 
 export const useNotification = () => {

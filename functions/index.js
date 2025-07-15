@@ -127,17 +127,169 @@ exports.getChatResponseStream = functions.https.onRequest(async (req, res) => {
 });
 
 
+exports.saveDeviceData = functions.https.onRequest(async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send('');
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).send('Method Not Allowed');
+  }
+
+  const { deviceId, token, timezone, location, city } = req.body;
+
+  if (!deviceId) {
+    return res.status(400).send('Missing deviceId');
+  }
+
+  const updateData = {
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  if (token) updateData.token = token;
+  if (timezone) updateData.timezone = timezone;
+  if (location) updateData.location = location;
+  if (city) updateData.city = city;
+
+  try {
+    await admin.firestore().collection('deviceTokens').doc(deviceId).set(updateData, { merge: true });
+    return res.status(200).send('Device data saved');
+  } catch (error) {
+    console.error('❌ Error saving device data:', error);
+    return res.status(500).send('Failed to save device data');
+  }
+});
+
+// Function to save device metadata (location, timezone, etc.)
+exports.saveDeviceMeta = functions.https.onRequest(async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send('');
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Method Not Allowed' });
+  }
+
+  const { deviceId, timezone, location, city } = req.body;
+
+  if (!deviceId) {
+    return res.status(400).json({ success: false, error: 'Missing deviceId' });
+  }
+
+  try {
+    // Save device metadata to the deviceTokens collection instead of deviceMeta
+    // This ensures all device data is in one place
+    await admin.firestore().collection('deviceTokens').doc(deviceId).set({
+      deviceId,
+      timezone,
+      location,
+      city,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    console.log(`✅ Device metadata saved for device: ${deviceId}`);
+    return res.status(200).json({ success: true, message: 'Device metadata saved successfully' });
+  } catch (error) {
+    console.error('❌ Error saving device metadata:', error);
+    return res.status(500).json({ success: false, error: 'Failed to save device metadata' });
+  }
+});
+
+// Function to save FCM token for push notifications
 exports.saveDeviceToken = functions.https.onRequest(async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send('');
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Method Not Allowed' });
+  }
+
   const { deviceId, token } = req.body;
 
-  if (!deviceId || !token) return res.status(400).send("Missing data");
+  if (!deviceId || !token) {
+    return res.status(400).json({ success: false, error: 'Missing deviceId or token' });
+  }
 
-  await admin.firestore().collection("deviceTokens").doc(deviceId).set({
-    token,
-    createdAt: Date.now(),
-  });
+  try {
+    // Save FCM token to Firestore
+    await admin.firestore().collection('deviceTokens').doc(deviceId).set({
+      token,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
 
-  res.send("Token saved for device");
+    console.log(`✅ FCM token saved for device: ${deviceId}`);
+    return res.status(200).json({ success: true, message: 'FCM token saved successfully' });
+  } catch (error) {
+    console.error('❌ Error saving FCM token:', error);
+    return res.status(500).json({ success: false, error: 'Failed to save FCM token' });
+  }
 });
+
+// Send a test notification to a specific device
+exports.sendTestNotification = functions.https.onCall(async (data, context) => {
+  const { deviceId } = data;
+  
+  if (!deviceId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Device ID is required');
+  }
+  
+  try {
+    // Get the device token from Firestore
+    const deviceDoc = await admin.firestore().collection('deviceTokens').doc(deviceId).get();
+    
+    if (!deviceDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Device not found');
+    }
+    
+    const deviceData = deviceDoc.data();
+    
+    if (!deviceData.token) {
+      throw new functions.https.HttpsError('failed-precondition', 'Device has no FCM token');
+    }
+    
+    // Send a test notification
+    await admin.messaging().send({
+      token: deviceData.token,
+      notification: {
+        title: 'Weather Alert Test',
+        body: 'This is a test notification from Skylar Weather App',
+      },
+      android: {
+        priority: 'high',
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+          },
+        },
+      },
+    });
+    
+    return { success: true, message: 'Test notification sent' };
+  } catch (error) {
+    console.error('Error sending test notification:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to send test notification', error);
+  }
+});
+  
+
+
 
   

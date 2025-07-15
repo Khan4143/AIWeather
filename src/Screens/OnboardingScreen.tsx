@@ -7,6 +7,8 @@ import {
   ScrollView,
   Platform,
   StatusBar,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -18,9 +20,185 @@ import { SCREEN_HEIGHT, SCREEN_WIDTH } from '../constants/dimesions';
 import Umbrella from 'react-native-vector-icons/FontAwesome5'
 import { UserDataManager } from '../utils/userDataManager';
 import { useNotification, requestNotificationPermission } from '../Notifications/UseNotification';
+import { useDeviceMeta } from '../Notifications/Location';
+import Geolocation from 'react-native-geolocation-service';
+import { PermissionsAndroid } from 'react-native';
+
+// Google Places API Key
+const GOOGLE_PLACES_API_KEY = 'AIzaSyAJcSmb8jAEU5qVlzR3sTRcraWxb38B31w';
 
 const OnboardingScreen = ({ navigation }: { navigation: any }) => {
   useNotification(); 
+  const { saveDeviceMeta } = useDeviceMeta();
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const requestLocationPermission = async () => {
+    if (Platform.OS === 'ios') {
+      return await Geolocation.requestAuthorization('whenInUse');
+    }
+    
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: "Location Permission",
+            message: "Weather app needs access to your location to provide accurate weather forecasts.",
+            buttonNeutral: "Ask Me Later",
+            buttonNegative: "Cancel",
+            buttonPositive: "OK"
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn(err);
+        return false;
+      }
+    }
+  };
+
+  const getCurrentLocation = () => {
+    return new Promise<{latitude: number, longitude: number, cityDisplay: string}>((resolve, reject) => {
+      Geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            const { latitude, longitude } = position.coords;
+            let cityDisplay = "Unknown location";
+            
+            try {
+              // Get city name using reverse geocoding with Google API
+              const response = await fetch(
+                `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_PLACES_API_KEY}`
+              );
+              const data = await response.json();
+              
+              console.log('Google Geocoding API response status:', data.status);
+              
+              if (data.status === 'OK' && data.results && data.results.length > 0) {
+                // Define type for address component
+                type AddressComponent = {
+                  long_name: string;
+                  short_name: string;
+                  types: string[];
+                };
+                
+                // Try to extract city name from address components
+                // Check through multiple results (from most specific to least specific)
+                let cityComponent = null;
+                
+                // Function to find city component in a result
+                const findCityInResult = (result: any) => {
+                  const addressComponents = result.address_components;
+                  
+                  // First try to get locality (city)
+                  let component = addressComponents.find((component: AddressComponent) => 
+                    component.types.includes('locality')
+                  );
+                  
+                  // If not found, try sublocality_level_1
+                  if (!component) {
+                    component = addressComponents.find((component: AddressComponent) => 
+                      component.types.includes('sublocality_level_1')
+                    );
+                  }
+                  
+                  // If not found, try administrative_area_level_2 (county/district)
+                  if (!component) {
+                    component = addressComponents.find((component: AddressComponent) => 
+                      component.types.includes('administrative_area_level_2')
+                    );
+                  }
+                  
+                  // If still not found, try administrative_area_level_1 (state/province)
+                  if (!component) {
+                    component = addressComponents.find((component: AddressComponent) => 
+                      component.types.includes('administrative_area_level_1')
+                    );
+                  }
+                  
+                  return component;
+                };
+                
+                // Try to find city in each result, starting from the most specific
+                for (const result of data.results) {
+                  cityComponent = findCityInResult(result);
+                  if (cityComponent) break;
+                }
+                
+                // If found any component, use its name
+                if (cityComponent) {
+                  cityDisplay = cityComponent.long_name;
+                  console.log('Found city name:', cityDisplay);
+                } else {
+                  // If still no city found, use formatted_address of first result
+                  if (data.results[0].formatted_address) {
+                    const parts = data.results[0].formatted_address.split(',');
+                    if (parts.length > 1) {
+                      // Use the second part of the address (often the city)
+                      cityDisplay = parts[1].trim();
+                      console.log('Using formatted address part as city:', cityDisplay);
+                    }
+                  }
+                }
+              } else {
+                // If Google API fails, try fallback method with OpenStreetMap Nominatim API
+                console.log('Google API failed, trying fallback method...');
+                await tryFallbackGeocoding(latitude, longitude);
+              }
+            } catch (error) {
+              console.error('Error with Google Geocoding API:', error);
+              // Try fallback method
+              await tryFallbackGeocoding(latitude, longitude);
+            }
+            
+            // Fallback geocoding method using OpenStreetMap Nominatim
+            async function tryFallbackGeocoding(lat: number, lng: number) {
+              try {
+                const response = await fetch(
+                  `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+                  {
+                    headers: {
+                      'User-Agent': 'SkylarWeatherApp/1.0',
+                      'Accept-Language': 'en-US,en'
+                    }
+                  }
+                );
+                const data = await response.json();
+                
+                if (data && data.address) {
+                  // Try to get city name from various fields
+                  cityDisplay = data.address.city || 
+                               data.address.town || 
+                               data.address.village || 
+                               data.address.county || 
+                               data.address.state || 
+                               "Unknown location";
+                  
+                  console.log('Found city name from fallback API:', cityDisplay);
+                }
+              } catch (fallbackError) {
+                console.error('Fallback geocoding failed:', fallbackError);
+              }
+            }
+            
+            resolve({ latitude, longitude, cityDisplay });
+          } catch (error) {
+            console.error('Error getting location details:', error);
+            resolve({ 
+              latitude: position.coords.latitude, 
+              longitude: position.coords.longitude, 
+              cityDisplay: "Unknown location" 
+            });
+          }
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          reject(error);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      );
+    });
+  };
 
   const [contentHeight, setContentHeight] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -47,9 +225,50 @@ const OnboardingScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const handleEnableNotifications = async () => {
-    await requestNotificationPermission();
- 
-    navigation.navigate('Intro');
+    try {
+      setIsLoading(true);
+      
+      // Request notification permission
+      const notificationPermission = await requestNotificationPermission();
+      
+      // Request location permission
+      const locationPermission = await requestLocationPermission();
+      
+      if (locationPermission) {
+        // Get current location and save device metadata
+        const locationData = await getCurrentLocation();
+        const result = await saveDeviceMeta(locationData);
+        
+        if (!result.success) {
+          console.error('Failed to save device metadata:', result.error);
+          Alert.alert(
+            "Warning",
+            "We were able to get your location, but there was an issue saving it. You may not receive location-based weather alerts.",
+            [{ text: 'OK' }]
+          );
+        } else {
+          console.log('Successfully saved device metadata');
+        }
+      } else {
+        Alert.alert(
+          "Location Permission Denied",
+          "Without location permission, we can't provide accurate weather forecasts. You can enable it in settings later."
+        );
+      }
+      
+      // Navigate to next screen
+      navigation.navigate('Intro');
+    } catch (error) {
+      console.error('Error during permission setup:', error);
+      Alert.alert(
+        "Setup Error",
+        "There was an error setting up notifications and location. You can try again in the settings later.",
+        [{ text: 'OK' }]
+      );
+      navigation.navigate('Intro');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleMaybeLater = () => {
@@ -136,25 +355,35 @@ const OnboardingScreen = ({ navigation }: { navigation: any }) => {
           style={styles.enableButton}
           activeOpacity={0.9}
           onPress={handleEnableNotifications}
+          disabled={isLoading}
         >
-          <View style={styles.buttonIconContainer}>
-            <Feather name="check-circle" size={adjust(16)} color="#fff" />
-          </View>
-          <Text style={styles.enableButtonText}>Enable Notifications</Text>
+          {isLoading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <>
+              <View style={styles.buttonIconContainer}>
+                <Feather name="check-circle" size={adjust(16)} color="#fff" />
+              </View>
+              <Text style={styles.enableButtonText}>Enable Notifications</Text>
+            </>
+          )}
         </TouchableOpacity>
         
         <TouchableOpacity 
           onPress={handleMaybeLater}
           activeOpacity={0.7}
+          disabled={isLoading}
         >
-          <Text style={styles.laterText}>Maybe Later (miss important alerts!)</Text>
+          <Text style={[styles.laterText, isLoading && styles.disabledText]}>
+            Maybe Later (miss important alerts!)
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+    <View style={styles.safeArea} >
       {/* <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" /> */}
       <LinearGradient
         colors={['#b3d4ff', '#5c85e6']}
@@ -168,7 +397,7 @@ const OnboardingScreen = ({ navigation }: { navigation: any }) => {
           {renderContent()}
         </ScrollView>
       </LinearGradient>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -312,6 +541,9 @@ const styles = StyleSheet.create({
   laterText: {
     color: '#333',
     fontSize: adjust(12),
+  },
+  disabledText: {
+    color: 'rgba(51, 51, 51, 0.5)', // Faded version of #333
   },
 });
 
